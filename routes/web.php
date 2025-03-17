@@ -16,3 +16,6 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+use App\Http\Controllers\TelegramController;
+
+Route::get('/telegram/long-polling', [TelegramController::class, 'handleUpdates']);
