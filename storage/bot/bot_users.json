@@ -13,5 +13,10 @@
         "name": "\/start",
         "email": "t@email.com",
         "password": "$2y$10$Jai0niA3GMJQcIgfstMXtuG\/ffYB7A2GC0.uyNRQIPVCAaZtpH1OK"
+    },
+    "458760597": {
+        "name": "Алексей",
+        "email": "semartem",
+        "password": "$2y$10$JBQrHdWrDhvw3CA9fWBY8OqVhM6IQqye4lPbLcGinAv03o1IGx1PW"
     }
 }

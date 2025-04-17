@@ -372,19 +372,27 @@ class BotKernel
                         'text' => 'Смена аккаунта отменена.',
                         'reply_markup' => $this->keyboardService->makeAccountMenu() // Показываем меню аккаунта
                     ]);
-                } else {
-                    // Инициализируем массив userData для chatId, если это смена аккаунта
-                    if (!isset($this->userData[$chatId])) {
-                       $this->userData[$chatId] = [];
-                    }
-                    $this->userData[$chatId]['name'] = $text;
-                    $this->userStates[$chatId] = States::AWAITING_EMAIL;
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => 'Почта:',
-                        'reply_markup' => $this->keyboardService->removeKeyboard()
-                    ]);
+                }  
+                else {
+                    $trimmedName = trim($text);
+                    if (empty($trimmedName)) {
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => 'Имя не может быть пустым. Пожалуйста, введите ваше имя:',
+                            // Клавиатуру не показываем, т.к. ждем ввод текста
+                            'reply_markup' => $this->keyboardService->removeKeyboard() // Убираем если была
+                        ]);
+                        // Остаемся в том же состоянии AWAITING_NAME
+                    } else {
+                        // ---> КОНЕЦ ПРОВЕРКИ <---
+                        if (!isset($this->userData[$chatId])) { $this->userData[$chatId] = []; }
+                        $this->userData[$chatId]['name'] = $trimmedName; // Используем обрезанное имя
+                        $this->userStates[$chatId] = States::AWAITING_EMAIL;
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId, 'text' => 'Почта:', 'reply_markup' => $this->keyboardService->removeKeyboard()
+                        ]);
                 }
+            }
             } elseif ($currentState === States::AWAITING_EMAIL) {
                 $this->userData[$chatId]['email'] = $text;
                 $this->userStates[$chatId] = States::AWAITING_PASSWORD;
@@ -430,28 +438,28 @@ class BotKernel
             $currentState === States::AWAITING_PRODUCT_NAME_SEARCH) {
             switch ($currentState) {
                 case States::AWAITING_PRODUCT_NAME_SAVE:
-                    $productName = trim($text);
+                    // ---> ИЗМЕНЕНА ПРОВЕРКА С УЧЕТОМ trim() <---
+                    $productName = trim($text); // Обрезаем пробелы сразу
                     if (empty($productName)) {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => 'Название не м.б. пустым. Введите снова или "Назад".',
+                            'text' => 'Название продукта не может быть пустым. Введите снова или "Назад".',
                             'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
                     } else {
-                        $this->userSelections[$chatId]['bju_product'] = ['name' => $productName];
+                    // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+                        $this->userSelections[$chatId]['bju_product'] = ['name' => $productName]; // Сохраняем обрезанное имя
                         $this->userStates[$chatId] = States::AWAITING_PRODUCT_PROTEIN;
                         $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => "Назв: {$productName}\nБелки(г/100г):",
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
+                            'chat_id' => $chatId, 'text' => "Назв: {$productName}\nБелки(г/100г):", 'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
                     }
-                    break;
+                break;
                 case States::AWAITING_PRODUCT_PROTEIN:
-                     if (!is_numeric($text) || $text < 0) {
+                     if (!is_numeric($text) || $text < 0 || $text > 100) {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => 'Некорректно. Введите число >= 0 (белки) или "Назад".',
+                            'text' => 'Некорректно. Введите число от 0 до 100 (белки г/100г) или "Назад".',
                             'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
                      } else {
@@ -465,10 +473,10 @@ class BotKernel
                      }
                      break;
                  case States::AWAITING_PRODUCT_FAT:
-                    if (!is_numeric($text) || $text < 0) {
+                    if (!is_numeric($text) || $text < 0 || $text > 100) {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => 'Некорректно. Введите число >= 0 (жиры) или "Назад".',
+                            'text' => 'Некорректно. Введите число от 0 до 100 (жиры г/100г) или "Назад".',
                             'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
                     } else {
@@ -482,10 +490,10 @@ class BotKernel
                     }
                     break;
                     case States::AWAITING_PRODUCT_CARBS:
-                        if (!is_numeric($text) || $text < 0) {
+                        if (!is_numeric($text) || $text < 0 || $text > 100) {
                              $this->telegram->sendMessage([
                                  'chat_id' => $chatId,
-                                 'text' => 'Некорректно. Введите число >= 0 (углеводы) или "Назад".',
+                                 'text' => 'Некорректно. Введите число от 0 до 100 (углеводы г/100г) или "Назад".',
                                  'reply_markup' => $this->keyboardService->makeBackOnly()
                              ]);
                         } else {
@@ -734,10 +742,10 @@ class BotKernel
                 break;
 
             case States::AWAITING_GRAMS_SEARCH_ADD:
-                if (!is_numeric($text) || $text <= 0) {
+                if (!is_numeric($text) || $text <= 0 || $text > 5000) {
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
-                        'text' => 'Некорректно. Введите положительное число (граммы) или "Назад".',
+                        'text' => 'Некорректно. Введите вес порции в граммах (больше 0 и не более 5000) или "Назад".',
                         'reply_markup' => $this->keyboardService->makeBackOnly()
                     ]);
                 } else {
@@ -790,8 +798,8 @@ class BotKernel
                 break;
 
             case States::AWAITING_GRAMS_MANUAL_ADD:
-                if (!is_numeric($text) || $text <= 0) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите положительное число (граммы) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                if (!is_numeric($text) || $text <= 0 || $text > 5000) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите вес порции в граммах (больше 0 и не более 5000) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
                 } else {
                     $this->userSelections[$chatId]['diary_entry']['grams'] = (float)$text;
                     $this->userStates[$chatId] = States::AWAITING_PRODUCT_NAME_MANUAL_ADD;
@@ -800,19 +808,26 @@ class BotKernel
                 break;
 
             case States::AWAITING_PRODUCT_NAME_MANUAL_ADD:
-                $productName = trim($text);
+                // ---> ИЗМЕНЕНА ПРОВЕРКА С УЧЕТОМ trim() <---
+                $productName = trim($text); // Обрезаем пробелы сразу
                 if (empty($productName)) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Название не м.б. пустым. Введите снова или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Название продукта не может быть пустым. Введите снова или "Назад".',
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
                 } else {
-                    $this->userSelections[$chatId]['diary_entry']['name'] = $productName;
+                // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+                    $this->userSelections[$chatId]['diary_entry']['name'] = $productName; // Сохраняем обрезанное имя
                     $this->userStates[$chatId] = States::AWAITING_PROTEIN_MANUAL_ADD;
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Название: {$productName}\nБелки(г) в порции:", 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId, 'text' => "Название: {$productName}\nБелки(г) в порции:", 'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
                 }
                 break;
-
             case States::AWAITING_PROTEIN_MANUAL_ADD:
-                if (!is_numeric($text) || $text < 0) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите число >= 0 (белки) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                if (!is_numeric($text) || $text < 0 || $text > 1000) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите кол-во белков в порции (0-1000 г) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
                 } else {
                     $this->userSelections[$chatId]['diary_entry']['p'] = (float)$text;
                     $this->userStates[$chatId] = States::AWAITING_FAT_MANUAL_ADD;
@@ -821,8 +836,8 @@ class BotKernel
                 break;
 
             case States::AWAITING_FAT_MANUAL_ADD:
-                if (!is_numeric($text) || $text < 0) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите число >= 0 (жиры) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                if (!is_numeric($text) || $text < 0 || $text > 1000) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите кол-во жиров в порции (0-1000 г) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
                 } else {
                     $this->userSelections[$chatId]['diary_entry']['f'] = (float)$text;
                     $this->userStates[$chatId] = States::AWAITING_CARBS_MANUAL_ADD;
@@ -831,8 +846,8 @@ class BotKernel
                 break;
 
             case States::AWAITING_CARBS_MANUAL_ADD:
-                if (!is_numeric($text) || $text < 0) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите число >= 0 (углеводы) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                if (!is_numeric($text) || $text < 0 || $text > 1000) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите кол-во углеводов в порции (0-1000 г) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
                 } else {
                     $this->userSelections[$chatId]['diary_entry']['c'] = (float)$text;
                     // Расчет калорий
@@ -1154,71 +1169,70 @@ class BotKernel
         }
     }
 
-        /**
+    /**
      * Обрабатывает ввод повторений и веса при записи тренировки.
      */
     private function handleTrainingLogInputState(int $chatId, string $text, Message $message, int $currentState): void
     {
-            // --- Обработка состояний ТОЛЬКО для записи (повторы, вес) ---
-            if ($currentState === States::AWAITING_REPS || $currentState === States::AWAITING_WEIGHT) {
-                // Добавим валидацию ввода
-            if (!is_numeric($text) || $text <= 0) {
-                $field = ($currentState === States::AWAITING_REPS) ? 'повторений' : 'веса';
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "Некорректный ввод. Введите положительное число для {$field} или 'Назад'.",
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
-                    ]);
-                    return;
-            }
+        // Валидация ввода
 
-            if ($currentState === States::AWAITING_REPS) {
-                $this->userSelections[$chatId]['reps'] = $text; // Сохраняем как строку или можно (int)
-                $this->userStates[$chatId] = States::AWAITING_WEIGHT;
-                $this->telegram->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => "Повторения: {$text}\nВведите вес (можно 0):",
-                    'reply_markup' => $this->keyboardService->makeBackOnly()
-                ]);
-            } elseif ($currentState === States::AWAITING_WEIGHT) {
-                    // Для веса допускаем 0 и нецелые числа
-                if (!is_numeric($text) || $text < 0) {
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "Некорректный ввод. Введите число >= 0 для веса или 'Назад'.",
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
-                    ]);
-                    return;
-                }
-                $this->userSelections[$chatId]['weight'] = $text; // Сохраняем как строку или можно (float)
-                $logEntry = [
-                    'exercise' => $this->userSelections[$chatId]['exercise'] ?? '???',
-                    'reps' => $this->userSelections[$chatId]['reps'] ?? '???',
-                    'weight' => $this->userSelections[$chatId]['weight'] ?? '???',
-                ];
-                if (!isset($this->currentTrainingLog[$chatId])) {
-                    $this->currentTrainingLog[$chatId] = [];
-                }
-                $this->currentTrainingLog[$chatId][] = $logEntry;
-                echo "Добавлено в лог для $chatId: "; print_r($logEntry); echo "\n";
-
-                $exerciseName = $logEntry['exercise'];
-                // Очищаем userSelections только для текущего упражнения, но сохраняем режим 'log'
-                unset(
-                    $this->userSelections[$chatId]['group'],
-                    $this->userSelections[$chatId]['type'],
-                    $this->userSelections[$chatId]['exercise'],
-                    $this->userSelections[$chatId]['reps'],
-                    $this->userSelections[$chatId]['weight']
-                );
-                $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU; // Возврат в меню записи
-                $this->telegram->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => "Подход '{$exerciseName}' ({$logEntry['reps']}x{$logEntry['weight']}) добавлен!\nДобавить еще упражнение/подход?",
-                    'reply_markup' => $this->keyboardService->makeAddExerciseMenu()
-                ]);
-            }
+        // Проверка для ПОВТОРЕНИЙ (должно быть > 0)
+        if ($currentState === States::AWAITING_REPS && (!is_numeric($text) || $text <= 0 || $text > 1000)) {
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "Некорректный ввод. Введите целое положительное число повторений (не более 1000) или 'Назад'.", // Положительное (>0)
+                'reply_markup' => $this->keyboardService->makeBackOnly()
+            ]);
             return;
+        }
+
+        // ---> ИСПРАВЛЕНА ВАЛИДАЦИЯ И ТЕКСТ ОШИБКИ ДЛЯ ВЕСА <---
+        // Проверка для ВЕСА (должно быть >= 0)
+        if ($currentState === States::AWAITING_WEIGHT && (!is_numeric($text) || $text < 0 || $text > 1000)) { // Используем $text < 0, чтобы разрешить 0
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "Некорректный ввод. Введите вес (число от 0 до 1000) или 'Назад'.", // Сообщение теперь корректно
+                'reply_markup' => $this->keyboardService->makeBackOnly()
+            ]);
+            return;
+        }
+        // ---> КОНЕЦ ИСПРАВЛЕНИЙ <---
+
+        // Основная логика состояний (остается без изменений)
+        if ($currentState === States::AWAITING_REPS) {
+            $this->userSelections[$chatId]['reps'] = $text;
+            $this->userStates[$chatId] = States::AWAITING_WEIGHT;
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "Повторения: {$text}\nВведите вес (можно 0):", // Подсказка остается прежней
+                'reply_markup' => $this->keyboardService->makeBackOnly()
+            ]);
+        } elseif ($currentState === States::AWAITING_WEIGHT) {
+            // Сюда мы попадем, только если валидация пройдена (включая ввод "0")
+            $this->userSelections[$chatId]['weight'] = $text;
+            $logEntry = [
+                'exercise' => $this->userSelections[$chatId]['exercise'] ?? '???',
+                'reps' => $this->userSelections[$chatId]['reps'] ?? '???',
+                'weight' => $this->userSelections[$chatId]['weight'] ?? '???',
+            ];
+            if (!isset($this->currentTrainingLog[$chatId])) {
+                $this->currentTrainingLog[$chatId] = [];
+            }
+            $this->currentTrainingLog[$chatId][] = $logEntry;
+            echo "Добавлено в лог для $chatId: "; print_r($logEntry); echo "\n";
+
+            $exerciseName = $logEntry['exercise'];
+            unset(
+                $this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'],
+                $this->userSelections[$chatId]['exercise'], $this->userSelections[$chatId]['reps'],
+                $this->userSelections[$chatId]['weight']
+            );
+            $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU;
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "Подход '{$exerciseName}' ({$logEntry['reps']}x{$logEntry['weight']}) добавлен!\nДобавить еще упражнение/подход?",
+                'reply_markup' => $this->keyboardService->makeAddExerciseMenu()
+            ]);
         }
     }
 
