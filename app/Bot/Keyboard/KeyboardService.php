@@ -28,7 +28,8 @@ class KeyboardService
                 Keyboard::button(['text' => 'Записать тренировку'])
             ])
             ->row([
-                Keyboard::button(['text' => 'Посмотреть прогресс в упражнениях'])
+                Keyboard::button(['text' => 'Посмотреть прогресс в упражнениях']),
+                Keyboard::button(['text' => 'Посмотреть технику выполнения'])
             ])
             ->row([
                 Keyboard::button(['text' => 'Вывести отстающие группы мышц'])
@@ -60,11 +61,14 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                Keyboard::button(['text' => 'Вывести имя и почту'])
+                Keyboard::button(['text' => 'Вывести имя и почту']) // Текущий активный
             ])
+            // ---> ИЗМЕНЕНО/ДОБАВЛЕНО <---
             ->row([
-                Keyboard::button(['text' => 'Сменить аккаунт'])
+                Keyboard::button(['text' => 'Переключить аккаунт']), // Переименовано
+                Keyboard::button(['text' => 'Добавить аккаунт'])     // Добавлено
             ])
+            // ---> КОНЕЦ ИЗМЕНЕНИЙ <---
             ->row([
                 Keyboard::button(['text' => 'Назад'])
             ])

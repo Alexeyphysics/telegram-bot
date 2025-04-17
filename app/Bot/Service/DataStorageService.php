@@ -61,26 +61,32 @@ class DataStorageService
     public function saveAllUserProducts(array $allUserProducts): bool
     {
         $this->userProducts = $allUserProducts; // Обновляем данные внутри сервиса
-        // При сохранении продуктов убедимся, что пустые массивы пользователя
-        // сохраняются как пустые объекты JSON {} для консистентности
-        $dataToSave = [];
-        foreach ($this->userProducts as $chatId => $products) {
-            if (is_array($products) && empty($products)) {
-                $dataToSave[$chatId] = new \stdClass();
-            } elseif (is_array($products)) {
-                 ksort($products); // Сортируем продукты по имени для порядка в файле
-                 $dataToSave[$chatId] = $products;
-            } else {
-                $dataToSave[$chatId] = $products; // На случай если там не массив (хотя не должно)
-            }
-        }
-        return $this->saveJsonData($dataToSave, $this->userProductsFile);
+
+        // Мы просто передаем полученный массив дальше в saveJsonData.
+        // Логика обработки пустых {} и ksort должна быть применена ПЕРЕД вызовом этого метода,
+        // если она нужна. В BotKernel данные уже должны быть в правильном виде.
+        // Старая логика с ensureObjectsForKey здесь была избыточна и могла мешать.
+
+        // Просто сохраняем ту структуру, которую передал BotKernel
+        return $this->saveJsonData($this->userProducts, $this->userProductsFile);
     }
 
     public function saveAllDiaryData(array $allDiaryData): bool
     {
-        $this->diaryData = $allDiaryData; // Обновляем данные внутри сервиса
-        // Можно добавить сортировку дат или записей внутри дат при необходимости
+        $this->diaryData = $allDiaryData;
+        // Для дневника обычно не нужно сохранять пустые {}
+        // Можно добавить сортировку дат или записей, если нужно
+        // ksort($this->diaryData); // Сортировка по chatId
+        // foreach ($this->diaryData as $chatId => &$accountsData) {
+        //    if (is_array($accountsData)) {
+        //         ksort($accountsData); // Сортировка по email
+        //         foreach ($accountsData as $email => &$dates) {
+        //             if (is_array($dates)) {
+        //                 ksort($dates); // Сортировка дат
+        //             }
+        //         }
+        //     }
+        // }
         return $this->saveJsonData($this->diaryData, $this->diaryFile);
     }
 
@@ -131,12 +137,9 @@ class DataStorageService
         return $decodedData;
     }
 
-    /**
-     * Сохраняет массив данных в JSON-файл.
-     */
     private function saveJsonData(array $data, string $filePath): bool
     {
-        // Кодируем с флагами для читаемости и корректной обработки Unicode
+        // Флаги JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION подходят
         $jsonContent = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
 
         if ($jsonContent === false) {
@@ -144,21 +147,16 @@ class DataStorageService
             return false;
         }
 
-        // Атомарная запись файла для большей надежности
+        // Атомарная запись (оставляем без изменений)
         $tempFilePath = $filePath . '.tmp';
         if (file_put_contents($tempFilePath, $jsonContent) === false) {
             echo "Error writing to temporary file: {$tempFilePath}\n";
             return false;
         }
-
-        // Права доступа (можно настроить более строго)
         chmod($tempFilePath, 0664);
-
-        // Переименовываем временный файл в основной
         if (!rename($tempFilePath, $filePath)) {
              echo "Error renaming temporary file {$tempFilePath} to {$filePath}\n";
-             // Попытка удалить временный файл
-             unlink($tempFilePath);
+             @unlink($tempFilePath); // Попытка удалить временный файл
              return false;
         }
 

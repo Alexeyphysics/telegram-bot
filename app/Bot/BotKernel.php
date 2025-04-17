@@ -2,6 +2,8 @@
 
 // app/Bot/BotKernel.php
 
+//Ctrl+K Ctrl+0   Ctrl+K Ctrl+J 
+
 namespace Bot; // Пространство имен для нашего бота
 
 use Telegram\Bot\Api;
@@ -129,69 +131,104 @@ class BotKernel
     }
 
   
+
+     //Основной метод обработки входящих сообщений.
+
     private function handleMessage(int $chatId, string $text, Message $message): void
     {
         $currentState = $this->userStates[$chatId] ?? States::DEFAULT;
-        $currentMode = $this->userSelections[$chatId]['mode'] ?? null; // Для упражнений
 
-        // --- Обработка кнопки Назад ВО ВРЕМЯ выбора/ввода данных ---
+        // 1. Обработка кнопки "Назад" ВО ВРЕМЯ ввода данных
+        // Вызываем метод, только если текст == "Назад"
         if ($text === 'Назад' && $this->handleBackDuringInput($chatId, $message, $currentState)) {
-            return; // Если "Назад" было обработано для состояния ввода, выходим из handleMessage
+            // Если handleBackDuringInput вернул true, значит, "Назад" было обработано
+            // для состояния ввода, и мы можем завершить обработку этого сообщения.
+            return;
         }
 
-        // --- Обработка состояний регистрации / Смены аккаунта ---
+        // 2. Маршрутизация по состояниям ввода данных
+
+        // Состояния Регистрации (первого аккаунта)
         if ($currentState >= States::AWAITING_NAME && $currentState <= States::AWAITING_PASSWORD) {
             $this->handleRegistrationState($chatId, $text, $message, $currentState);
-            return; // Выходим, т.к. состояние обработано
+            return; // Состояние обработано
         }
 
-        // --- Обработка состояний БЖУ ---
-        if (($currentState >= States::AWAITING_PRODUCT_NAME_SAVE && $currentState <= States::AWAITING_DELETE_CONFIRMATION) ||
-        $currentState === States::AWAITING_PRODUCT_NAME_SEARCH) {
-        $this->handleBjuStates($chatId, $text, $message, $currentState);
-        return; 
+        // Состояния Добавления Нового Аккаунта
+        if ($currentState >= States::AWAITING_NEW_ACCOUNT_NAME && $currentState <= States::AWAITING_NEW_ACCOUNT_PASSWORD) {
+            $this->handleNewAccountState($chatId, $text, $message, $currentState);
+            return; // Состояние обработано
         }
 
-        // --- Обработка состояний Дневника ---
-        if ($currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_DATE_VIEW_MEAL) {
+        // Состояние Переключения Аккаунта
+        if ($currentState === States::AWAITING_ACCOUNT_SWITCH_SELECTION) {
+            $this->handleAccountSwitchState($chatId, $text, $message, $currentState);
+            return; // Состояние обработано
+        }
+
+        // Состояния Управления БЖУ Продуктов
+        if (($currentState >= States::AWAITING_PRODUCT_NAME_SAVE && $currentState <= States::AWAITING_SAVE_CONFIRMATION) || // Сохранение
+            $currentState === States::AWAITING_PRODUCT_NUMBER_DELETE || // <-- Удаление по номеру
+            $currentState === States::AWAITING_DELETE_CONFIRMATION ||   // <-- Подтверждение удаления
+            $currentState === States::AWAITING_PRODUCT_NAME_SEARCH)      // <-- Поиск
+        {
+            $this->handleBjuStates($chatId, $text, $message, $currentState);
+            return; // Состояние обработано
+        }
+
+        // Состояния Дневника Питания
+        // Включаем все шаги добавления, удаления и просмотра
+        if (($currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_ADD_MEAL_CONFIRM_MANUAL && $currentState != States::DIARY_MENU) || // Добавление
+            $currentState === States::AWAITING_DATE_DELETE_MEAL ||      // Ввод даты удаления
+            $currentState === States::AWAITING_MEAL_NUMBER_DELETE ||   // <-- Ввод номера удаления
+            $currentState === States::AWAITING_DELETE_MEAL_CONFIRM ||   // <-- Подтверждение удаления
+            $currentState === States::AWAITING_DATE_VIEW_MEAL)           // Ввод даты просмотра
+        {
             $this->handleDiaryStates($chatId, $text, $message, $currentState);
-            return; // Выходим, т.к. состояние обработано
+            return; // Состояние обработано
         }
 
-        // --- ОБЩАЯ Обработка состояний выбора упражнения ---
+        // Состояния Выбора Упражнения
         if ($currentState >= States::SELECTING_MUSCLE_GROUP && $currentState <= States::SELECTING_EXERCISE) {
             $this->handleExerciseSelectionState($chatId, $text, $message, $currentState);
-            return; // Выходим, т.к. состояние обработано
+            return; // Состояние обработано
         }
-        
-        // --- Обработка состояний ТОЛЬКО для записи (повторы, вес) ---
+
+        // Состояния Ввода Данных Тренировки (Повторы/Вес)
         if ($currentState === States::AWAITING_REPS || $currentState === States::AWAITING_WEIGHT) {
             $this->handleTrainingLogInputState($chatId, $text, $message, $currentState);
-            return; // Выходим, т.к. состояние обработано
+            return; // Состояние обработано
         }
 
-        // Сюда дойдет управление, только если состояние не было обработано выше
-        $this->handleMenuCommands($chatId, $text, $message, $currentState); // Передаем управление последнему обработчику
+        // 3. Если ни одно состояние ввода данных не подошло,
+        //    обрабатываем команды меню и текстовые кнопки
+        $this->handleMenuCommands($chatId, $text, $message, $currentState);
+
+        // Важно: Убедись, что после КАЖДОГО вызова handle...State() стоит return;,
+        // чтобы избежать случайного попадания в handleMenuCommands(), если состояние уже обработано.
+        // В handleMenuCommands() return не нужен в конце, т.к. это последний шаг.
     }
 
-    private function findOriginalProductName(int $chatId, string $productNameLower): string
+    // ---> ИЗМЕНЕНО: Добавлен параметр $activeEmail <---
+    private function findOriginalProductName(int $chatId, string $productNameLower, ?string $activeEmail): string
     {
-        // Попробуем найти оригинальное имя в текущих данных BotKernel
-        if (isset($this->userProducts[$chatId])) {
-            // Эта реализация неэффективна и неточна.
-            // Лучше хранить отображение lower_name => original_name
-            // или хранить объекты с name и lower_name в userProducts.
-            // Пока возвращаем просто lower-case имя.
-            // TODO: Улучшить хранение и поиск оригинальных имен продуктов.
-            return $productNameLower;
-            /*
-            foreach (array_keys($this->userProducts[$chatId]) as $key) {
-                if (mb_strtolower($key) === $productNameLower) {
-                     // Это все еще может вернуть не тот регистр.
-                     return $key;
+        // ---> ИЗМЕНЕНО: Ищем по activeEmail <---
+        // Сначала проверяем временные данные, если они есть (при сохранении)
+        $tempProductData = $this->userSelections[$chatId]['bju_product'] ?? null;
+        if ($tempProductData && isset($tempProductData['name']) && mb_strtolower($tempProductData['name']) === $productNameLower) {
+            return $tempProductData['name'];
+        }
+
+        // Потом ищем в сохраненных продуктах активного аккаунта
+        if ($activeEmail && isset($this->userProducts[$chatId][$activeEmail])) {
+            // TODO: Улучшить хранение/поиск оригинальных имен.
+            // Эта реализация неточна, если ключи не хранят оригинальный регистр.
+            // Пока просто возвращаем ключ в lower-case, если не нашли лучше.
+                if (array_key_exists($productNameLower, $this->userProducts[$chatId][$activeEmail])) {
+                    // Если бы ключ хранил оригинальное имя, вернули бы его.
+                    // return $key_with_original_case;
+                    return $productNameLower; // Возвращаем как есть (lower case)
                 }
-            }
-            */
         }
         // Возвращаем lower-case, если не нашли
         return $productNameLower;
@@ -248,7 +285,23 @@ class BotKernel
             $returnState = ($currentMode === 'log') ? States::LOGGING_TRAINING_MENU : States::DEFAULT;
             $returnKeyboard = ($currentMode === 'log') ? $this->keyboardService->makeAddExerciseMenu() : $this->keyboardService->makeTrainingMenu();
             $cancelMessage = ($currentMode === 'log') ? 'Добавление упражнения отменено.' : 'Просмотр прогресса отменен.';
-
+            
+            $returnState = match ($currentMode) {
+                'log' => States::LOGGING_TRAINING_MENU, // Возврат в меню добавления упражнения
+                'view', 'technique' => States::DEFAULT, // Возврат в главное меню для режимов просмотра
+                default => States::DEFAULT,
+           };
+           $returnKeyboard = match ($currentMode) {
+                'log' => $this->keyboardService->makeAddExerciseMenu(),
+                'view', 'technique' => $this->keyboardService->makeTrainingMenu(), // Клавиатура меню тренировок
+                default => $this->keyboardService->makeTrainingMenu(),
+           };
+           $cancelMessage = match ($currentMode) {
+               'log' => 'Добавление упражнения отменено.',
+               'view' => 'Просмотр прогресса отменен.',
+               'technique' => 'Просмотр техники отменен.', // <-- Добавлено сообщение
+               default => 'Действие отменено.'
+           };
             switch ($currentState) {
                 case States::SELECTING_MUSCLE_GROUP:
                     $this->userStates[$chatId] = $returnState; unset($this->userSelections[$chatId]);
@@ -353,80 +406,130 @@ class BotKernel
             return true; // "Назад" обработано для Дневника
         }
 
+
+
+
+        // ---> ДОБАВЛЕНО: Обработка "Назад" при Добавлении Нового Аккаунта <---
+        if ($currentState >= States::AWAITING_NEW_ACCOUNT_NAME && $currentState <= States::AWAITING_NEW_ACCOUNT_PASSWORD) {
+            // Отменяем добавление, возвращаемся в меню Аккаунта
+            $this->userStates[$chatId] = States::DEFAULT; // Возвращаемся в состояние главного меню (откуда доступно меню Аккаунта)
+            unset($this->userSelections[$chatId]['new_account_data']); // Очищаем временные данные
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => 'Добавление нового аккаунта отменено.',
+                'reply_markup' => $this->keyboardService->makeAccountMenu() // Показываем меню Аккаунта
+            ]);
+            return true; // "Назад" обработано
+        }
+        // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
+
+        // ---> ДОБАВЛЕНО: Обработка "Назад" при Переключении Аккаунта <---
+        if ($currentState === States::AWAITING_ACCOUNT_SWITCH_SELECTION) {
+            // Отменяем переключение, возвращаемся в меню Аккаунта
+            $this->userStates[$chatId] = States::DEFAULT;
+            unset($this->userSelections[$chatId]['account_switch_map']); // Очищаем временные данные
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => 'Выбор аккаунта для переключения отменен.',
+                'reply_markup' => $this->keyboardService->makeAccountMenu() // Показываем меню Аккаунта
+            ]);
+            return true; // "Назад" обработано
+        }
+    // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
+
+
         // Если ни одно из условий выше не сработало
         return false;
     }
 
-    /**
+        /**
      * Обрабатывает состояния регистрации или смены аккаунта.
      */
     private function handleRegistrationState(int $chatId, string $text, Message $message, int $currentState): void
     {
-        // --- Обработка состояний регистрации / Смены аккаунта ---
-        if ($currentState >= States::AWAITING_NAME && $currentState <= States::AWAITING_PASSWORD) {
-            if ($currentState === States::AWAITING_NAME) {
-                if ($text === 'Назад') { // Специальная обработка "Назад" для смены аккаунта
-                    $this->userStates[$chatId] = States::DEFAULT; // Возврат в главное меню (или ACCOUNT_MENU, если его добавим)
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => 'Смена аккаунта отменена.',
-                        'reply_markup' => $this->keyboardService->makeAccountMenu() // Показываем меню аккаунта
-                    ]);
-                }  
-                else {
-                    $trimmedName = trim($text);
-                    if (empty($trimmedName)) {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Имя не может быть пустым. Пожалуйста, введите ваше имя:',
-                            // Клавиатуру не показываем, т.к. ждем ввод текста
-                            'reply_markup' => $this->keyboardService->removeKeyboard() // Убираем если была
-                        ]);
-                        // Остаемся в том же состоянии AWAITING_NAME
-                    } else {
-                        // ---> КОНЕЦ ПРОВЕРКИ <---
-                        if (!isset($this->userData[$chatId])) { $this->userData[$chatId] = []; }
-                        $this->userData[$chatId]['name'] = $trimmedName; // Используем обрезанное имя
-                        $this->userStates[$chatId] = States::AWAITING_EMAIL;
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId, 'text' => 'Почта:', 'reply_markup' => $this->keyboardService->removeKeyboard()
-                        ]);
-                }
+        if ($currentState === States::AWAITING_NAME) {
+            if ($text === 'Назад') { /* ... код Назад ... */ return; } // Добавил return для ясности
+
+            $trimmedName = trim($text);
+            if (empty($trimmedName)) {
+                $this->telegram->sendMessage([ /* ... Имя не пустое ... */ ]);
+            } else {
+                // ---> ИЗМЕНЕНО: Сохраняем во временное хранилище <---
+                $this->userSelections[$chatId]['registration_data'] = ['name' => $trimmedName];
+                // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+                $this->userStates[$chatId] = States::AWAITING_EMAIL;
+                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Почта:', 'reply_markup' => $this->keyboardService->removeKeyboard() ]);
             }
-            } elseif ($currentState === States::AWAITING_EMAIL) {
-                $this->userData[$chatId]['email'] = $text;
-                $this->userStates[$chatId] = States::AWAITING_PASSWORD;
+        } elseif ($currentState === States::AWAITING_EMAIL) {
+            // ---> ДОБАВЛЕНО: Валидация Email <---
+            $email = trim($text);
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $this->telegram->sendMessage([
                     'chat_id' => $chatId,
-                    'text' => 'Пароль:'
+                    'text' => 'Некорректный формат email. Пожалуйста, введите правильный email адрес:',
+                    // Клавиатуру не показываем
                 ]);
-            } elseif ($currentState === States::AWAITING_PASSWORD) {
-                $hashedPassword = password_hash($text, PASSWORD_DEFAULT);
-                if ($hashedPassword === false) {
-                    echo "Pwd hash failed for {$chatId}!\n";
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => 'Ошибка регистрации/смены аккаунта.',
-                        'reply_markup' => $this->keyboardService->makeMainMenu()
-                    ]);
-                    $this->userStates[$chatId] = States::DEFAULT;
-                    // Не удаляем userData, если это была смена, чтобы не потерять имя/почту
-                } else {
-                    $this->userData[$chatId]['password'] = $hashedPassword;
-                    $this->userStates[$chatId] = States::DEFAULT;
-                    $name = $this->userData[$chatId]['name'] ?? '?';
-                    echo "Сохр. {$chatId}: Name={$name}, Email={$this->userData[$chatId]['email']}, PwdHash={$hashedPassword}\n";
-                    $this->dataStorage->saveAllUserData($this->userData);
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "Готово, {$name}!",
-                        'reply_markup' => $this->keyboardService->makeMainMenu()
-                    ]);
+                // Остаемся в состоянии AWAITING_EMAIL
+            } else {
+                // ---> ИЗМЕНЕНО: Добавляем email во временное хранилище <---
+                // Проверяем, есть ли уже данные регистрации (должны быть)
+                if (!isset($this->userSelections[$chatId]['registration_data'])) {
+                    // Ошибка - имя не было сохранено. Вернемся на шаг назад.
+                    $this->userStates[$chatId] = States::AWAITING_NAME;
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка, введите имя заново:', 'reply_markup' => $this->keyboardService->removeKeyboard()]);
+                    return;
                 }
+                $this->userSelections[$chatId]['registration_data']['email'] = $email;
+                // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+                $this->userStates[$chatId] = States::AWAITING_PASSWORD;
+                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Пароль:']);
             }
-            return;
+        } elseif ($currentState === States::AWAITING_PASSWORD) {
+            $hashedPassword = password_hash($text, PASSWORD_DEFAULT);
+            if ($hashedPassword === false) { /* ... ошибка хеширования ... */ }
+            else {
+                // ---> ИЗМЕНЕНО: Получаем данные из userSelections и создаем новую структуру <---
+                $regData = $this->userSelections[$chatId]['registration_data'] ?? null;
+                if (!$regData || !isset($regData['name']) || !isset($regData['email'])) {
+                    // Ошибка - нет данных для регистрации
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка регистрации: не найдены имя или email. Попробуйте /start заново.', 'reply_markup' => $this->keyboardService->removeKeyboard()]);
+                    $this->userStates[$chatId] = States::DEFAULT;
+                    unset($this->userSelections[$chatId]['registration_data']); // Чистим временные данные
+                    return;
+                }
+
+                $name = $regData['name'];
+                $email = $regData['email'];
+
+                // Создаем структуру пользователя с первым аккаунтом
+                $this->userData[$chatId] = [
+                    'active_account_email' => $email, // Сразу делаем активным
+                    'accounts' => [
+                        $email => [ // Ключ - email
+                            'name' => $name,
+                            'email' => $email,
+                            'password' => $hashedPassword
+                        ]
+                    ]
+                ];
+                // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+
+                $this->userStates[$chatId] = States::DEFAULT;
+                echo "Зарегистрирован первый аккаунт для {$chatId}: Name={$name}, Email={$email}\n";
+                $this->dataStorage->saveAllUserData($this->userData); // Сохраняем новую структуру
+
+                // Очищаем временные данные регистрации
+                unset($this->userSelections[$chatId]['registration_data']);
+
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "Аккаунт '{$name}' успешно создан!",
+                    'reply_markup' => $this->keyboardService->makeMainMenu()
+                ]);
+            }
         }
     }
+
 
     /**
      * Обрабатывает состояния, связанные с управлением БЖУ продуктов.
@@ -517,17 +620,21 @@ class BotKernel
                     break; // Не забываем break
                 case States::AWAITING_SAVE_CONFIRMATION:
                     if ($text === 'Да') {
+                        $activeEmail = $this->getActiveAccountEmail($chatId);
                         $pData = $this->userSelections[$chatId]['bju_product'] ?? null;
                         if ($pData && isset($pData['name'])) {
                             $productNameLower = mb_strtolower($pData['name']);
+                            
                             if (!isset($this->userProducts[$chatId])) {
                                 $this->userProducts[$chatId] = [];
                             }
-                            $this->userProducts[$chatId][$productNameLower] = [
-                                $pData['protein'],
-                                $pData['fat'],
-                                $pData['carbs'],
-                                $pData['kcal']
+                            // Проверяем/создаем email внутри chatId
+                            if (!isset($this->userProducts[$chatId][$activeEmail])) {
+                                $this->userProducts[$chatId][$activeEmail] = [];
+                            }
+
+                            $this->userProducts[$chatId][$activeEmail][$productNameLower] = [
+                                $pData['protein'], $pData['fat'], $pData['carbs'], $pData['kcal']
                             ];
                             $this->dataStorage->saveAllUserProducts($this->userProducts);
                             $this->telegram->sendMessage([
@@ -561,6 +668,10 @@ class BotKernel
                     }
                     break;
                 case States::AWAITING_PRODUCT_NUMBER_DELETE:
+                        // ---> ПОЛУЧАЕМ АКТИВНЫЙ EMAIL <---
+                        $activeEmail = $this->getActiveAccountEmail($chatId);
+                        if (!$activeEmail) { /* Ошибка: нет активного аккаунта */ $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт не определен.', 'reply_markup' => $this->keyboardService->makeAccountMenu()]); $this->userStates[$chatId] = States::DEFAULT; return; }
+                        // ---> КОНЕЦ ПОЛУЧЕНИЯ <---
                         $productsForSelection = $this->userSelections[$chatId]['products_for_delete'] ?? null;
             
                         // Проверяем, что временные данные существуют
@@ -588,18 +699,12 @@ class BotKernel
                             $productNameToDeleteLower = $productsForSelection[$numberToDelete]; // Получаем ключ (имя в lower case)
             
                             // Проверяем, существует ли еще этот продукт (на всякий случай)
-                            if (!isset($this->userProducts[$chatId][$productNameToDeleteLower])) {
-                                 $this->telegram->sendMessage([
-                                    'chat_id' => $chatId,
-                                    'text' => 'Ошибка: Выбранный продукт уже удален или не найден. Попробуйте снова.',
-                                    'reply_markup' => $this->keyboardService->makeBjuMenu() // Возврат в меню
-                                 ]);
-                                 $this->userStates[$chatId] = States::BJU_MENU;
-                                 unset($this->userSelections[$chatId]['products_for_delete']);
+                                if (!isset($this->userProducts[$chatId][$activeEmail][$productNameToDeleteLower])) {
+                                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Выбранный продукт уже удален...', 'reply_markup' => $this->keyboardService->makeBjuMenu() ]);
+                                    $this->userStates[$chatId] = States::BJU_MENU; unset($this->userSelections[$chatId]['products_for_delete']);
                             } else {
-                                // Получаем данные для подтверждения
-                                $pData = $this->userProducts[$chatId][$productNameToDeleteLower];
-                                $originalName = $this->findOriginalProductName($chatId, $productNameToDeleteLower);
+                                $pData = $this->userProducts[$chatId][$activeEmail][$productNameToDeleteLower];
+                                $originalName = $this->findOriginalProductName($chatId, $productNameToDeleteLower, $activeEmail);
             
                                 // Сохраняем ключ (lower case) для подтверждения
                                 $this->userSelections[$chatId]['bju_product_to_delete'] = $productNameToDeleteLower;
@@ -618,62 +723,70 @@ class BotKernel
                         }
                     break;
                 case States::AWAITING_DELETE_CONFIRMATION:
-                     if ($text === 'Да') {
-                         $productNameToDeleteLower = $this->userSelections[$chatId]['bju_product_to_delete'] ?? null;
-                         if ($productNameToDeleteLower && isset($this->userProducts[$chatId][$productNameToDeleteLower])) {
-                             $originalName = $this->findOriginalProductName($chatId, $productNameToDeleteLower);
-                             unset($this->userProducts[$chatId][$productNameToDeleteLower]);
-                             $this->dataStorage->saveAllUserProducts($this->userProducts);
-                             $this->telegram->sendMessage([
-                                 'chat_id' => $chatId,
-                                 'text' => "Продукт '{$originalName}' удален.",
-                                 'reply_markup' => $this->keyboardService->makeBjuMenu()
-                             ]);
-                         } else {
-                             $this->telegram->sendMessage([
-                                 'chat_id' => $chatId,
-                                 'text' => 'Ошибка: Не удалось найти продукт для удаления.',
-                                 'reply_markup' => $this->keyboardService->makeBjuMenu()
-                             ]);
-                         }
-                         $this->userStates[$chatId] = States::BJU_MENU;
-                         unset($this->userSelections[$chatId]['bju_product_to_delete']);
-                     } elseif ($text === 'Нет') {
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => 'Удаление отменено.',
-                             'reply_markup' => $this->keyboardService->makeBjuMenu()
-                         ]);
-                         $this->userStates[$chatId] = States::BJU_MENU;
-                         unset($this->userSelections[$chatId]['bju_product_to_delete']);
-                     } else {
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => 'Пожалуйста, нажмите "Да" или "Нет".',
-                             'reply_markup' => $this->keyboardService->makeConfirmYesNo()
-                         ]);
-                     }
-                    break;
-                case States::AWAITING_PRODUCT_NAME_SEARCH:
-                    $productNameLower = trim(mb_strtolower($text));
-                    if (isset($this->userProducts[$chatId][$productNameLower])) {
-                        $pData = $this->userProducts[$chatId][$productNameLower];
-                        $originalName = $this->findOriginalProductName($chatId, $productNameLower);
-                        $resultMsg = "Найден: {$originalName}\nБ: {$pData[0]} Ж: {$pData[1]} У: {$pData[2]} К: {$pData[3]}";
+                    if ($text === 'Да') {
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) { /* Ошибка: нет активного аккаунта */ return; }
+                        $productNameToDeleteLower = $this->userSelections[$chatId]['bju_product_to_delete'] ?? null;
+                        if ($productNameToDeleteLower && isset($this->userProducts[$chatId][$activeEmail][$productNameToDeleteLower])) {
+                            $originalName = $this->findOriginalProductName($chatId, $productNameToDeleteLower, $activeEmail);
+                            unset($this->userProducts[$chatId][$activeEmail][$productNameToDeleteLower]); // Удаляем из нужного аккаунта
+                            $this->dataStorage->saveAllUserProducts($this->userProducts);
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Продукт '{$originalName}' удален.",
+                                'reply_markup' => $this->keyboardService->makeBjuMenu()
+                            ]);
+                        } else {
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => 'Ошибка: Не удалось найти продукт для удаления.',
+                                'reply_markup' => $this->keyboardService->makeBjuMenu()
+                            ]);
+                        }
+                        $this->userStates[$chatId] = States::BJU_MENU;
+                        unset($this->userSelections[$chatId]['bju_product_to_delete']);
+                    } elseif ($text === 'Нет') {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => $resultMsg,
+                            'text' => 'Удаление отменено.',
                             'reply_markup' => $this->keyboardService->makeBjuMenu()
                         ]);
+                        $this->userStates[$chatId] = States::BJU_MENU;
+                        unset($this->userSelections[$chatId]['bju_product_to_delete']);
                     } else {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => "Продукт '{$text}' не найден.",
-                            'reply_markup' => $this->keyboardService->makeBjuMenu()
+                            'text' => 'Пожалуйста, нажмите "Да" или "Нет".',
+                            'reply_markup' => $this->keyboardService->makeConfirmYesNo()
                         ]);
                     }
-                    $this->userStates[$chatId] = States::BJU_MENU; // Возвращаемся в меню БЖУ
-                    break;
+                break;
+            case States::AWAITING_PRODUCT_NAME_SEARCH:
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка: нет активного аккаунта */ return; }
+    
+                $productNameLower = trim(mb_strtolower($text));
+    
+                if (isset($this->userProducts[$chatId][$activeEmail][$productNameLower])) {
+                    $pData = $this->userProducts[$chatId][$activeEmail][$productNameLower];
+                    // ---> ИСПРАВЛЕНИЕ ВЫЗОВА <---
+                    $originalName = $this->findOriginalProductName($chatId, $productNameLower, $activeEmail);
+                    // ---> КОНЕЦ ИСПРАВЛЕНИЯ <---
+                    $resultMsg = "Найден: {$originalName}\nБ: {$pData[0]} Ж: {$pData[1]} У: {$pData[2]} К: {$pData[3]}";
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => $resultMsg,
+                        'reply_markup' => $this->keyboardService->makeBjuMenu()
+                    ]);
+                } else {
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => "Продукт '{$text}' не найден.",
+                        'reply_markup' => $this->keyboardService->makeBjuMenu()
+                    ]);
+                }
+                $this->userStates[$chatId] = States::BJU_MENU; // Возвращаемся в меню БЖУ
+                break;
             }
             return;
         }
@@ -687,8 +800,10 @@ class BotKernel
         switch ($currentState) {
             // --- Добавление приема пищи ---
             case States::AWAITING_ADD_MEAL_OPTION:
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                 if ($text === 'Поиск в базе знаний') {
-                    if (empty($this->userProducts[$chatId])) {
+                    if (empty($this->userProducts[$chatId][$activeEmail])) {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
                             'text' => 'Сначала сохраните продукты в "БЖУ продуктов".',
@@ -721,9 +836,11 @@ class BotKernel
                 break;
 
             case States::AWAITING_SEARCH_PRODUCT_NAME_ADD:
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                 $productNameLower = trim(mb_strtolower($text));
-                if (isset($this->userProducts[$chatId][$productNameLower])) {
-                    $originalName = $this->findOriginalProductName($chatId, $productNameLower);
+                if (isset($this->userProducts[$chatId][$activeEmail][$productNameLower])) {
+                    $originalName = $this->findOriginalProductName($chatId, $productNameLower, $activeEmail);
                     $this->userSelections[$chatId]['diary_entry']['search_name_lower'] = $productNameLower;
                     $this->userSelections[$chatId]['diary_entry']['search_name_original'] = $originalName;
                     $this->userStates[$chatId] = States::AWAITING_GRAMS_SEARCH_ADD;
@@ -742,40 +859,53 @@ class BotKernel
                 break;
 
             case States::AWAITING_GRAMS_SEARCH_ADD:
-                if (!is_numeric($text) || $text <= 0 || $text > 5000) {
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => 'Некорректно. Введите вес порции в граммах (больше 0 и не более 5000) или "Назад".',
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
-                    ]);
-                } else {
-                    $grams = (float)$text;
-                    $productNameLower = $this->userSelections[$chatId]['diary_entry']['search_name_lower'];
-                    $originalName = $this->userSelections[$chatId]['diary_entry']['search_name_original'];
-                    $baseBJU = $this->userProducts[$chatId][$productNameLower];
-                    $p = round($baseBJU[0] * $grams / 100, 1);
-                    $f = round($baseBJU[1] * $grams / 100, 1);
-                    $c = round($baseBJU[2] * $grams / 100, 1);
-                    $kcal = round($baseBJU[3] * $grams / 100, 0);
-                    $this->userSelections[$chatId]['diary_entry']['log'] = [
-                        'name' => $originalName, 'grams' => $grams, 'p' => $p, 'f' => $f, 'c' => $c, 'kcal' => $kcal
-                    ];
-                    $this->userStates[$chatId] = States::AWAITING_ADD_MEAL_CONFIRM_SEARCH;
-                    $confirmMsg = "Добавить в дневник?\n{$originalName} - {$grams} г\nБ: {$p} Ж: {$f} У: {$c} К: {$kcal}";
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId, 'text' => $confirmMsg, 'reply_markup' => $this->keyboardService->makeConfirmYesNo()
-                    ]);
-                }
+                // ---> ПОЛУЧАЕМ АКТИВНЫЙ EMAIL <---
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
+                    if (!is_numeric($text) || $text <= 0 || $text > 5000) {
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => 'Некорректно. Введите вес порции в граммах (больше 0 и не более 5000) или "Назад".',
+                            'reply_markup' => $this->keyboardService->makeBackOnly()
+                        ]);
+                    } else {
+                        $grams = (float)$text;
+                        $productNameLower = $this->userSelections[$chatId]['diary_entry']['search_name_lower'];
+                        $originalName = $this->userSelections[$chatId]['diary_entry']['search_name_original'];
+                        if (!isset($this->userProducts[$chatId][$activeEmail][$productNameLower])) {
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Данные продукта не найдены. Попробуйте снова.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                            $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']); return;
+                        }
+                        $baseBJU = $this->userProducts[$chatId][$activeEmail][$productNameLower];
+                        $p = round($baseBJU[0] * $grams / 100, 1);
+                        $f = round($baseBJU[1] * $grams / 100, 1);
+                        $c = round($baseBJU[2] * $grams / 100, 1);
+                        $kcal = round($baseBJU[3] * $grams / 100, 0);
+                        $this->userSelections[$chatId]['diary_entry']['log'] = [
+                            'name' => $originalName, 'grams' => $grams, 'p' => $p, 'f' => $f, 'c' => $c, 'kcal' => $kcal
+                        ];
+                        $this->userStates[$chatId] = States::AWAITING_ADD_MEAL_CONFIRM_SEARCH;
+                        $confirmMsg = "Добавить в дневник?\n{$originalName} - {$grams} г\nБ: {$p} Ж: {$f} У: {$c} К: {$kcal}";
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId, 'text' => $confirmMsg, 'reply_markup' => $this->keyboardService->makeConfirmYesNo()
+                        ]);
+                    }
                 break;
 
             case States::AWAITING_ADD_MEAL_CONFIRM_SEARCH:
                 if ($text === 'Да') {
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) { /* Ошибка */ return; }
                     $logData = $this->userSelections[$chatId]['diary_entry']['log'] ?? null;
                     $logDate = $this->userSelections[$chatId]['diary_entry']['date'] ?? date('Y-m-d');
                     if ($logData) {
-                        if (!isset($this->diaryData[$chatId])) { $this->diaryData[$chatId] = []; }
-                        if (!isset($this->diaryData[$chatId][$logDate])) { $this->diaryData[$chatId][$logDate] = []; }
-                        $this->diaryData[$chatId][$logDate][] = $logData;
+                        if (!isset($this->diaryData[$chatId][$activeEmail])) {
+                            $this->diaryData[$chatId][$activeEmail] = [];
+                        }
+                        if (!isset($this->diaryData[$chatId][$activeEmail][$logDate])) {
+                            $this->diaryData[$chatId][$activeEmail][$logDate] = [];
+                        }
+                        $this->diaryData[$chatId][$activeEmail][$logDate][] = $logData;
                         $this->dataStorage->saveAllDiaryData($this->diaryData);
                         $formattedDate = date('d.m.Y', strtotime($logDate));
                         $this->telegram->sendMessage([
@@ -866,13 +996,19 @@ class BotKernel
 
             case States::AWAITING_ADD_MEAL_CONFIRM_MANUAL:
                 if ($text === 'Да') {
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) { /* Ошибка */ return; }
                     $logData = $this->userSelections[$chatId]['diary_entry'] ?? null;
                     $logDate = $logData['date'] ?? date('Y-m-d');
                     if ($logData && isset($logData['name']) && isset($logData['grams'])) {
                         unset($logData['date']);
-                        if (!isset($this->diaryData[$chatId])) { $this->diaryData[$chatId] = []; }
-                        if (!isset($this->diaryData[$chatId][$logDate])) { $this->diaryData[$chatId][$logDate] = []; }
-                        $this->diaryData[$chatId][$logDate][] = $logData;
+                        if (!isset($this->diaryData[$chatId][$activeEmail])) {
+                            $this->diaryData[$chatId][$activeEmail] = [];
+                        }
+                        if (!isset($this->diaryData[$chatId][$activeEmail][$logDate])) {
+                            $this->diaryData[$chatId][$activeEmail][$logDate] = [];
+                        }
+                       $this->diaryData[$chatId][$activeEmail][$logDate][] = $logData;
                         $this->dataStorage->saveAllDiaryData($this->diaryData);
                         $formattedDate = date('d.m.Y', strtotime($logDate));
                         $this->telegram->sendMessage([
@@ -896,6 +1032,8 @@ class BotKernel
 
             // --- Удаление приема пищи ---
             case States::AWAITING_DATE_DELETE_MEAL:
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                 $dateToDelete = null;
                 $normalizedText = strtolower(trim($text));
                 if ($normalizedText === 'вчера') { $dateToDelete = date('Y-m-d', strtotime('-1 day')); }
@@ -910,7 +1048,7 @@ class BotKernel
                 }
 
                 $formattedDate = date('d.m.Y', strtotime($dateToDelete));
-                if (empty($this->diaryData[$chatId][$dateToDelete])) {
+                if (empty($this->diaryData[$chatId][$activeEmail][$dateToDelete])) {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Нет записей за {$formattedDate}. Возврат в меню Дневника.", 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
                     $this->userStates[$chatId] = States::DIARY_MENU;
                     break;
@@ -920,7 +1058,7 @@ class BotKernel
                 $mealListMsg = "Приемы пищи за {$formattedDate}:\n\n";
                 $i = 1;
                 $mealsForSelection = [];
-                foreach ($this->diaryData[$chatId][$dateToDelete] as $index => $entry) {
+                foreach ($this->diaryData[$chatId][$activeEmail][$dateToDelete] as $index => $entry) {
                     $mealListMsg .= sprintf("%d. %s (%g г) - Б:%g Ж:%g У:%g К:%g\n",
                         $i, $entry['name'], $entry['grams'], $entry['p'], $entry['f'], $entry['c'], $entry['kcal']
                     );
@@ -944,6 +1082,8 @@ class BotKernel
             // case States::AWAITING_GRAMS_DELETE_MEAL:       // --- УДАЛЕНО ---
 
             case States::AWAITING_MEAL_NUMBER_DELETE: // <-- НОВОЕ СОСТОЯНИЕ
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                 $deleteInfo = $this->userSelections[$chatId]['diary_delete'] ?? null;
                 $mealIndices = $deleteInfo['meal_indices'] ?? null;
                 $dateToDelete = $deleteInfo['date'] ?? null;
@@ -959,7 +1099,7 @@ class BotKernel
                     $numberToDelete = (int)$text;
                     $indexToDelete = $mealIndices[$numberToDelete];
 
-                    if (!isset($this->diaryData[$chatId][$dateToDelete][$indexToDelete])) {
+                    if (!isset($this->diaryData[$chatId][$activeEmail][$dateToDelete][$indexToDelete])) {
                         $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Выбранная запись уже удалена или не найдена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
                         $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_delete']);
                     } else {
@@ -978,16 +1118,18 @@ class BotKernel
                 break;
 
             case States::AWAITING_DELETE_MEAL_CONFIRM:
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                 if ($text === 'Да') {
                     $dateToDelete = $this->userSelections[$chatId]['diary_delete']['date'] ?? null;
                     $indexToDelete = $this->userSelections[$chatId]['diary_delete']['index'] ?? null;
                     $entryName = $this->userSelections[$chatId]['diary_delete']['entry']['name'] ?? '???';
 
-                    if ($dateToDelete && $indexToDelete !== null && isset($this->diaryData[$chatId][$dateToDelete][$indexToDelete])) {
-                        unset($this->diaryData[$chatId][$dateToDelete][$indexToDelete]);
-                        $this->diaryData[$chatId][$dateToDelete] = array_values($this->diaryData[$chatId][$dateToDelete]);
-                        if (empty($this->diaryData[$chatId][$dateToDelete])) { unset($this->diaryData[$chatId][$dateToDelete]); }
-                        if (empty($this->diaryData[$chatId])) { unset($this->diaryData[$chatId]); }
+                    if ($dateToDelete && $indexToDelete !== null && isset($this->diaryData[$chatId][$activeEmail][$dateToDelete][$indexToDelete])) {
+                        unset($this->diaryData[$chatId][$activeEmail][$dateToDelete][$indexToDelete]);
+                        $this->diaryData[$chatId][$activeEmail][$dateToDelete] = array_values($this->diaryData[$chatId][$activeEmail][$dateToDelete]);
+                        if (empty($this->diaryData[$chatId][$activeEmail][$dateToDelete])) { unset($this->diaryData[$chatId][$activeEmail][$dateToDelete]); }
+                        if (empty($this->diaryData[$chatId][$activeEmail])) { unset($this->diaryData[$chatId][$activeEmail]); }
                         $this->dataStorage->saveAllDiaryData($this->diaryData);
                         $formattedDate = date('d.m.Y', strtotime($dateToDelete));
                         $this->telegram->sendMessage([
@@ -1009,6 +1151,8 @@ class BotKernel
 
             // --- Просмотр рациона ---
             case States::AWAITING_DATE_VIEW_MEAL:
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                 $dateToView = null;
                 $normalizedText = strtolower(trim($text));
                 if ($normalizedText === 'вчера') { $dateToView = date('Y-m-d', strtotime('-1 day')); }
@@ -1023,7 +1167,7 @@ class BotKernel
                 }
 
                 $formattedDate = date('d.m.Y', strtotime($dateToView));
-                if (empty($this->diaryData[$chatId][$dateToView])) {
+                if (empty($this->diaryData[$chatId][$activeEmail][$dateToView])) {
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId, 'text' => "Нет записей за {$formattedDate}.", 'reply_markup' => $this->keyboardService->makeDiaryMenu()
                     ]);
@@ -1031,7 +1175,7 @@ class BotKernel
                     $totalP = 0; $totalF = 0; $totalC = 0; $totalKcal = 0;
                     $viewMsg = "Рацион за {$formattedDate}:\n\n";
                     $i = 1;
-                    foreach ($this->diaryData[$chatId][$dateToView] as $entry) {
+                    foreach ($this->diaryData[$chatId][$activeEmail][$dateToView] as $entry) {
                         $viewMsg .= sprintf("%d. %s (%g г)\n   Б: %g Ж: %g У: %g К: %g\n",
                             $i++, $entry['name'], $entry['grams'], $entry['p'], $entry['f'], $entry['c'], $entry['kcal']
                         );
@@ -1147,7 +1291,16 @@ class BotKernel
                                 'text' => "Упражнение: {$selectedExercise}\nВаши результаты:\n(Функционал просмотра прогресса пока не реализован)",
                                 'reply_markup' => $this->keyboardService->makeTrainingMenu() // Возврат в меню Тренировки
                             ]);
-                        } else {
+                        }elseif ($mode === 'technique') { // Режим просмотра техники
+                            $this->userStates[$chatId] = States::DEFAULT; // Возвращаемся в главное меню
+                            unset($this->userSelections[$chatId]); // Очищаем выбор
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Упражнение: {$selectedExercise}\nТехника выполнения:\nВИДЕО", // Выводим заглушку "ВИДЕО"
+                                'reply_markup' => $this->keyboardService->makeTrainingMenu() // Возвращаем меню Тренировок
+                            ]);
+                        
+                        }else {
                             $this->userStates[$chatId] = States::DEFAULT;
                              unset($this->userSelections[$chatId]);
                             $this->telegram->sendMessage([
@@ -1258,25 +1411,42 @@ class BotKernel
         switch ($text) {
             // --- Основные команды и Аккаунт ---
             case '/start':
+                // ---> ИЗМЕНЕНО: Логика для мультиаккаунта <---
                 if (isset($this->userData[$chatId])) {
-                    $name = $this->userData[$chatId]['name'] ?? 'пользователь';
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "С возвращением, {$name}!",
-                        'reply_markup' => $this->keyboardService->makeMainMenu()
-                    ]);
-                    $this->userStates[$chatId] = States::DEFAULT; // Сброс состояния на всякий случай
+                    // Пользователь существует, приветствуем по активному аккаунту
+                    $activeAccountData = $this->getActiveAccountData($chatId);
+                    if ($activeAccountData) {
+                        $name = $activeAccountData['name'] ?? 'пользователь';
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => "С возвращением, {$name}! (Активный аккаунт: {$activeAccountData['email']})", // Добавим email для ясности
+                            'reply_markup' => $this->keyboardService->makeMainMenu()
+                        ]);
+                    } else {
+                        // Ошибка: пользователь есть, но активный аккаунт не найден
+                        // Возможно, стоит предложить выбрать аккаунт или создать новый
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => "Ошибка: не удалось определить активный аккаунт. Попробуйте выбрать аккаунт через меню.",
+                            'reply_markup' => $this->keyboardService->makeAccountMenu() // Показываем меню аккаунта
+                        ]);
+                    }
+                    $this->userStates[$chatId] = States::DEFAULT;
                 } else {
-                    $this->userStates[$chatId] = States::AWAITING_NAME; // Начинаем регистрацию
-                     // Инициализируем userData для этого пользователя
-                    $this->userData[$chatId] = [];
+                    // Пользователя нет - начинаем регистрацию ПЕРВОГО аккаунта
+                    $this->userStates[$chatId] = States::AWAITING_NAME;
+                    // Не нужно инициализировать $this->userData[$chatId] здесь
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
-                        'text' => "Добро пожаловать! Давайте зарегистрируемся.\nВведите ваше имя:",
+                        'text' => "Добро пожаловать! Давайте зарегистрируем ваш первый аккаунт.\nВведите ваше имя:",
                         'reply_markup' => $this->keyboardService->removeKeyboard()
                     ]);
                 }
-                break;
+                 // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+                break; // Не забываем break
+            
+
+
             case 'Аккаунт':
                  if ($currentState === States::DEFAULT) {
                     $this->telegram->sendMessage([
@@ -1288,27 +1458,96 @@ class BotKernel
                  } // Иначе игнорируем, если мы не в главном меню
                 break;
             case 'Вывести имя и почту':
-                 // Проверяем, что мы в меню аккаунта или главном (на случай прямого ввода текста)
-                if ($currentState === States::DEFAULT /* || $currentState === States::ACCOUNT_MENU */) {
-                    $name = $this->userData[$chatId]['name'] ?? 'Не указано';
-                    $email = $this->userData[$chatId]['email'] ?? 'Не указана';
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "Имя: {$name}\nПочта: {$email}",
-                        'reply_markup' => $this->keyboardService->makeAccountMenu() // Остаемся в меню аккаунта
-                    ]);
-                }
+                    // ---> ИЗМЕНЕНО: Используем активный аккаунт <---
+                    if (in_array($currentState, [States::DEFAULT, States::BJU_MENU, States::DIARY_MENU /*, States::ACCOUNT_MENU */])) { // Добавил другие меню на всякий случай
+                        $activeAccountData = $this->getActiveAccountData($chatId);
+                        if ($activeAccountData) {
+                            $name = $activeAccountData['name'] ?? 'Не указано';
+                            $email = $activeAccountData['email'] ?? 'Не указан';
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Активный аккаунт:\nИмя: {$name}\nПочта: {$email}",
+                                'reply_markup' => $this->keyboardService->makeAccountMenu()
+                            ]);
+                        } else {
+                            // Этой ситуации не должно быть, если пользователь зарегистрирован
+                             $this->telegram->sendMessage([
+                                 'chat_id' => $chatId,
+                                 'text' => 'Ошибка: Активный аккаунт не найден.',
+                                 'reply_markup' => $this->keyboardService->makeMainMenu()
+                             ]);
+                              $this->userStates[$chatId] = States::DEFAULT; // Сброс на всякий случай
+                        }
+                    }
+                     // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+                break; // Не забываем break
+            
+            case 'Посмотреть технику выполнения':
+                    // Проверяем, что мы в главном меню или меню тренировок
+                    if (in_array($currentState, [States::DEFAULT, States::LOGGING_TRAINING_MENU, States::DIARY_MENU, States::BJU_MENU /*, States::TRAINING_MENU */])) { // Добавил другие состояния, чтобы кнопка работала из разных мест главного уровня
+                        $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; // Начинаем выбор упражнения
+                        $this->userSelections[$chatId] = ['mode' => 'technique']; // Устанавливаем режим просмотра техники
+                        $groupKeys = array_keys($this->exercises);
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => "Для просмотра техники, выберите группу мышц:\n" . $this->generateListMessage($groupKeys),
+                            'reply_markup' => $this->keyboardService->makeBackOnly()
+                        ]);
+                    }
+                   break;
+            case 'Добавить аккаунт':
+                        if (in_array($currentState, [States::DEFAULT, States::BJU_MENU, States::DIARY_MENU /*, States::ACCOUNT_MENU */])) { // Проверка текущего меню
+                            // Начинаем процесс добавления нового аккаунта
+                            $this->userStates[$chatId] = States::AWAITING_NEW_ACCOUNT_NAME;
+                            // Очищаем временные данные, если они были
+                            unset($this->userSelections[$chatId]['new_account_data']);
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Добавление нового аккаунта.\nВведите имя для нового аккаунта:",
+                                'reply_markup' => $this->keyboardService->makeBackOnly()
+                            ]);
+                        }
                 break;
-            case 'Сменить аккаунт':
-                 if ($currentState === States::DEFAULT /* || $currentState === States::ACCOUNT_MENU */) {
-                     $this->userStates[$chatId] = States::AWAITING_NAME; // Начинаем процесс "регистрации" заново
-                     // Не очищаем $this->userData[$chatId], чтобы при отмене вернуться к старым данным
-                     $this->telegram->sendMessage([
-                         'chat_id' => $chatId,
-                         'text' => "Введите новое имя (или 'Назад' для отмены):",
-                         'reply_markup' => $this->keyboardService->makeBackOnly() // Клавиатура только с "Назад"
-                     ]);
-                 }
+
+            case 'Переключить аккаунт':
+                if (in_array($currentState, [States::DEFAULT, States::BJU_MENU, States::DIARY_MENU /*, States::ACCOUNT_MENU */])) {
+                    // Проверяем, есть ли вообще аккаунты у пользователя
+                    if (!isset($this->userData[$chatId]['accounts']) || count($this->userData[$chatId]['accounts']) < 1) {
+                            // Этой ситуации быть не должно, если пользователь зарегистрирован
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Не найдено ни одного аккаунта.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                            $this->userStates[$chatId] = States::DEFAULT;
+                    } elseif (count($this->userData[$chatId]['accounts']) === 1) {
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'У вас только один аккаунт.', 'reply_markup' => $this->keyboardService->makeAccountMenu()]);
+                    } else {
+                            // Формируем список аккаунтов
+                            $accountListMsg = "Выберите аккаунт для переключения:\n\n";
+                            $i = 1;
+                            $accountsForSelection = []; // [номер => email]
+                            $activeEmail = $this->getActiveAccountEmail($chatId); // Получаем текущий активный
+    
+                            // Сортируем по email для единообразия
+                            $sortedAccounts = $this->userData[$chatId]['accounts'];
+                            ksort($sortedAccounts);
+    
+                            foreach ($sortedAccounts as $email => $accData) {
+                                $isActive = ($email === $activeEmail) ? ' (активный)' : '';
+                                $accountListMsg .= sprintf("%d. %s (%s)%s\n", $i, $accData['name'], $accData['email'], $isActive);
+                                $accountsForSelection[$i] = $email;
+                                $i++;
+                            }
+                            $accountListMsg .= "\nВведите номер аккаунта:";
+    
+                            // Сохраняем карту выбора и переходим в состояние ожидания номера
+                            $this->userSelections[$chatId]['account_switch_map'] = $accountsForSelection;
+                            $this->userStates[$chatId] = States::AWAITING_ACCOUNT_SWITCH_SELECTION;
+    
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => $accountListMsg,
+                                'reply_markup' => $this->keyboardService->removeKeyboard() // Ждем ввода номера
+                            ]);
+                    }
+                }
                 break;
 
             // --- Меню Тренировки и его подпункты ---
@@ -1350,7 +1589,7 @@ class BotKernel
                  if ($currentState === States::DEFAULT /* || $currentState === States::TRAINING_MENU */) {
                      $this->telegram->sendMessage([
                          'chat_id' => $chatId,
-                         'text' => "Анализ отстающих групп мышц:\n(Функционал пока не реализован)",
+                         'text' => "Анализ отстающих групп мышц:\n(у тебя все отстающее, иди качаться дрищ!)",
                          'reply_markup' => $this->keyboardService->makeTrainingMenu() // Остаемся в меню тренировок
                      ]);
                  }
@@ -1440,11 +1679,13 @@ class BotKernel
                  }
                 break;
             case 'Удалить приём пищи':
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                  if ($currentState === States::DIARY_MENU) {
-                     if (!isset($this->diaryData[$chatId]) || empty($this->diaryData[$chatId])) {
+                     if (!isset($this->diaryData[$chatId][$activeEmail]) || empty($this->diaryData[$chatId][$activeEmail])) {
                          $this->telegram->sendMessage([
                              'chat_id' => $chatId,
-                             'text' => 'Ваш дневник питания пока пуст. Нечего удалять.',
+                             'text' => 'Ваш дневник питания для текущего аккаунта пока пуст. Нечего удалять.',
                              'reply_markup' => $this->keyboardService->makeDiaryMenu()
                          ]);
                      } else {
@@ -1482,10 +1723,11 @@ class BotKernel
                  }
                 break;
                 case 'Удалить информацию о продукте':
-                    // Работает ТОЛЬКО в состоянии BJU_MENU (или DEFAULT, если меню БЖУ - это DEFAULT)
-                    // ---> ИЗМЕНЕННЫЙ КОД <---
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) { /* Ошибка: нет активного аккаунта */ $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт не определен.',
+                         'reply_markup' => $this->keyboardService->makeAccountMenu()]); $this->userStates[$chatId] = States::DEFAULT; return; }
                     if (in_array($currentState, [States::DEFAULT, States::BJU_MENU])) { // Проверяем, что мы в меню БЖУ или главном
-                        if (!isset($this->userProducts[$chatId]) || empty($this->userProducts[$chatId])) {
+                        if (!isset($this->userProducts[$chatId][$activeEmail]) || empty($this->userProducts[$chatId][$activeEmail])) {
                             $this->telegram->sendMessage([
                                 'chat_id' => $chatId,
                                 'text' => 'У вас нет сохраненных продуктов для удаления.',
@@ -1496,18 +1738,17 @@ class BotKernel
                             $productListMsg = "Какой продукт удалить?\n\n";
                             $i = 1;
                             // Сортируем ключи (имена в lower case) для стабильного порядка
-                            $sortedKeys = array_keys($this->userProducts[$chatId]);
+                            $sortedKeys = array_keys($this->userProducts[$chatId][$activeEmail]);
                             sort($sortedKeys);
                             $productsForSelection = []; // Сохраним порядок для удаления
                             foreach ($sortedKeys as $nameLower) {
-                                $bju = $this->userProducts[$chatId][$nameLower];
+                                $bju = $this->userProducts[$chatId][$activeEmail][$nameLower];
                                 // Пытаемся найти оригинальное имя (лучше хранить его при сохранении)
-                                $originalName = $this->findOriginalProductName($chatId, $nameLower);
+                                $originalName = $this->findOriginalProductName($chatId, $nameLower, $activeEmail);
                                 $productListMsg .= sprintf("%d. %s (Б: %g, Ж: %g, У: %g, К: %g / 100г)\n",
                                     $i, $originalName, $bju[0], $bju[1], $bju[2], $bju[3]);
                                 // Сохраняем ключ (имя в lower case) для последующего удаления по номеру
-                                $productsForSelection[$i] = $nameLower;
-                                $i++;
+                                $productsForSelection[$i] = $nameLower; $i++;
                             }
        
                             $productListMsg .= "\nВведите номер продукта для удаления (или 'Назад'):";
@@ -1527,8 +1768,10 @@ class BotKernel
                     }
                    break; // Не забываем break
             case 'Сохранённые продукты':
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                 if ($currentState === States::BJU_MENU) {
-                    if (!isset($this->userProducts[$chatId]) || empty($this->userProducts[$chatId])) {
+                    if (!isset($this->userProducts[$chatId][$activeEmail]) || empty($this->userProducts[$chatId][$activeEmail])) {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
                             'text' => 'У вас нет сохраненных продуктов.',
@@ -1537,12 +1780,12 @@ class BotKernel
                     } else {
                         $productListMsg = "Ваши сохраненные продукты:\n";
                         $i = 1;
+                        $sortedProducts = $this->userProducts[$chatId][$activeEmail];
                         // Сортируем для единообразия вывода
-                        $sortedProducts = $this->userProducts[$chatId];
                         ksort($sortedProducts);
                         foreach ($sortedProducts as $nameLower => $bju) {
                             // Отображаем оригинальное имя, если найдем его
-                            $originalName = $this->findOriginalProductName($chatId, $nameLower);
+                            $originalName = $this->findOriginalProductName($chatId, $nameLower, $activeEmail);
                             $productListMsg .= sprintf("%d. %s (Б: %g, Ж: %g, У: %g, К: %g / 100г)\n",
                                 $i++, $originalName, $bju[0], $bju[1], $bju[2], $bju[3]);
                         }
@@ -1555,8 +1798,10 @@ class BotKernel
                 }
                 break;
             case 'Поиск продуктов':
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                if (!$activeEmail) { /* Ошибка */ return; }
                  if ($currentState === States::BJU_MENU) {
-                     if (!isset($this->userProducts[$chatId]) || empty($this->userProducts[$chatId])) {
+                     if (!isset($this->userProducts[$chatId][$activeEmail]) || empty($this->userProducts[$chatId][$activeEmail])) {
                          $this->telegram->sendMessage([
                              'chat_id' => $chatId,
                              'text' => 'У вас нет сохраненных продуктов для поиска.',
@@ -1662,6 +1907,171 @@ class BotKernel
 
     }
 
+
+
+        /**
+     * Получает email активного аккаунта для данного chatId.
+     * Возвращает null, если пользователь или активный аккаунт не найдены.
+     */
+    private function getActiveAccountEmail(int $chatId): ?string
+    {
+        // Проверяем, есть ли вообще запись для chatId и установлен ли активный email
+        if (isset($this->userData[$chatId]['active_account_email'])) {
+            $activeEmail = $this->userData[$chatId]['active_account_email'];
+            // Дополнительно проверяем, существует ли аккаунт с таким email
+            if (isset($this->userData[$chatId]['accounts'][$activeEmail])) {
+                return $activeEmail;
+            } else {
+                // Ситуация, когда active_account_email указывает на несуществующий аккаунт (ошибка данных)
+                // Можно попытаться выбрать первый доступный аккаунт или вернуть null
+                // Пока вернем null для простоты
+                echo "Warning: Active account email '{$activeEmail}' not found in accounts for chat ID {$chatId}.\n";
+                return null;
+            }
+        }
+        return null; // Пользователь или активный аккаунт не найдены
+    }
+
+    /**
+     * Получает данные активного аккаунта для данного chatId.
+     * Возвращает массив с данными или null, если аккаунт не найден.
+     */
+    private function getActiveAccountData(int $chatId): ?array
+    {
+        $activeEmail = $this->getActiveAccountEmail($chatId);
+        if ($activeEmail) {
+            // Мы уже проверили существование в getActiveAccountEmail
+            return $this->userData[$chatId]['accounts'][$activeEmail];
+        }
+        return null;
+    }
+    /**
+     * Обрабатывает состояния добавления НОВОГО аккаунта к существующему пользователю.
+     */
+    private function handleNewAccountState(int $chatId, string $text, Message $message, int $currentState): void
+    {
+        if ($currentState === States::AWAITING_NEW_ACCOUNT_NAME) {
+            // Обработка кнопки "Назад" теперь делается в handleBackDuringInput
+
+            $trimmedName = trim($text);
+            if (empty($trimmedName)) {
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Имя не может быть пустым. Введите имя для нового аккаунта:',
+                    // ---> ДОБАВЛЕНА КЛАВИАТУРА <---
+                    'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+            } else {
+                $this->userSelections[$chatId]['new_account_data'] = ['name' => $trimmedName];
+                $this->userStates[$chatId] = States::AWAITING_NEW_ACCOUNT_EMAIL;
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Введите Email для нового аккаунта:',
+                    // ---> ДОБАВЛЕНА КЛАВИАТУРА <---
+                    'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+            }
+        } elseif ($currentState === States::AWAITING_NEW_ACCOUNT_EMAIL) {
+            $email = trim($text);
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Некорректный формат email. Введите правильный email:',
+                    // ---> ДОБАВЛЕНА КЛАВИАТУРА <---
+                    'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+            } elseif (isset($this->userData[$chatId]['accounts'][$email])) {
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "Аккаунт с email '{$email}' уже существует у вас. Введите другой email:",
+                    // ---> ДОБАВЛЕНА КЛАВИАТУРА <---
+                    'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+            } else {
+                if (!isset($this->userSelections[$chatId]['new_account_data'])) { /* Ошибка */ return; }
+                $this->userSelections[$chatId]['new_account_data']['email'] = $email;
+                $this->userStates[$chatId] = States::AWAITING_NEW_ACCOUNT_PASSWORD;
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Введите пароль для нового аккаунта:',
+                    // ---> ДОБАВЛЕНА КЛАВИАТУРА <---
+                    'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+            }
+        } elseif ($currentState === States::AWAITING_NEW_ACCOUNT_PASSWORD) {
+            $hashedPassword = password_hash($text, PASSWORD_DEFAULT);
+            if ($hashedPassword === false) {
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Ошибка хеширования пароля. Попробуйте ввести пароль еще раз:',
+                    // ---> ДОБАВЛЕНА КЛАВИАТУРА <---
+                    'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+            } else {
+                $newData = $this->userSelections[$chatId]['new_account_data'] ?? null;
+                if (!$newData || !isset($newData['name']) || !isset($newData['email'])) { /* Ошибка */ return; }
+
+                $name = $newData['name'];
+                $email = $newData['email'];
+
+                $this->userData[$chatId]['accounts'][$email] = [ /* ... данные аккаунта ... */ ];
+                $this->userData[$chatId]['active_account_email'] = $email;
+
+                $this->userStates[$chatId] = States::DEFAULT;
+                echo "Добавлен новый аккаунт для {$chatId}: Name={$name}, Email={$email}\n";
+                $this->dataStorage->saveAllUserData($this->userData);
+
+                unset($this->userSelections[$chatId]['new_account_data']);
+
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "Новый аккаунт '{$name}' ({$email}) успешно добавлен и сделан активным!",
+                    'reply_markup' => $this->keyboardService->makeMainMenu() // Возвращаем основное меню
+                ]);
+            }
+        }
+    }
+
+
+    /**
+     * Обрабатывает выбор номера аккаунта для переключения.
+     */
+    private function handleAccountSwitchState(int $chatId, string $text, Message $message, int $currentState): void
+    {
+        if ($currentState === States::AWAITING_ACCOUNT_SWITCH_SELECTION) {
+            $accountMap = $this->userSelections[$chatId]['account_switch_map'] ?? null;
+
+            if (!$accountMap) { /* Ошибка */ return; }
+
+            if (!ctype_digit($text) || !isset($accountMap[(int)$text])) {
+                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер. Введите номер из списка:']);
+                // Клавиатуру не показываем, ждем ввод
+            } else {
+                $selectedNumber = (int)$text;
+                $selectedEmail = $accountMap[$selectedNumber];
+
+                // Проверяем, существует ли еще аккаунт (на всякий случай)
+                if (!isset($this->userData[$chatId]['accounts'][$selectedEmail])) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Выбранный аккаунт не найден.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                    $this->userStates[$chatId] = States::DEFAULT;
+                } else {
+                    // Обновляем активный аккаунт
+                    $this->userData[$chatId]['active_account_email'] = $selectedEmail;
+                    $this->dataStorage->saveAllUserData($this->userData); // Сохраняем изменения
+
+                    $selectedName = $this->userData[$chatId]['accounts'][$selectedEmail]['name'] ?? '???';
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => "Аккаунт '{$selectedName}' ({$selectedEmail}) активирован.",
+                        'reply_markup' => $this->keyboardService->makeMainMenu() // Возврат в главное меню
+                    ]);
+                    $this->userStates[$chatId] = States::DEFAULT;
+                }
+                // Очищаем временные данные в любом случае после попытки
+                unset($this->userSelections[$chatId]['account_switch_map']);
+            }
+        }
+    }
 
 
 }

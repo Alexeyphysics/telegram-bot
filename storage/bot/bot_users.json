@@ -1,22 +1,17 @@
 {
     "390311595": {
-        "name": "уфф",
-        "email": "уфф",
-        "password": "$2y$10$Es2fJsmytRzIp.OAu4qYFuXnmZ5RRa9GhVR2hOku8Lw2OEGVy1JIu"
-    },
-    "1219908707": {
-        "name": "pavel",
-        "email": "pave1ershov@yandex.ru",
-        "password": "$2y$10$cLMFlFO.Kh2r4PggM75\/XudutC8h0DFMpqW0SV909EBgY6QqrDtiO"
-    },
-    "755953053": {
-        "name": "\/start",
-        "email": "t@email.com",
-        "password": "$2y$10$Jai0niA3GMJQcIgfstMXtuG\/ffYB7A2GC0.uyNRQIPVCAaZtpH1OK"
-    },
-    "458760597": {
-        "name": "Алексей",
-        "email": "semartem",
-        "password": "$2y$10$JBQrHdWrDhvw3CA9fWBY8OqVhM6IQqye4lPbLcGinAv03o1IGx1PW"
+        "active_account_email": "test@mama.com",
+        "accounts": {
+            "test@mama.com": {
+                "name": "test",
+                "email": "test@mama.com",
+                "password": "$2y$10$a5L0nOWXKjWTdgRhpk\/wVuePU\/bFmJq4SGamNI9yGzNqJFKrd1qPa"
+            },
+            "test2@mama.com": {
+                "name": "test2",
+                "email": "test2@mama.com",
+                "password": "$2y$10$0NwzBmsCmErQ537B5\/MHqOHGKI1GLYh5xQdlExOzhk2LlIVrkGnyC"
+            }
+        }
     }
 }

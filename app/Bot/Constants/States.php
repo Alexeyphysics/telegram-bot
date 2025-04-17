@@ -13,7 +13,10 @@ class States
     public const AWAITING_EMAIL = 2;
     public const AWAITING_PASSWORD = 3;
     // Можно добавить состояние для меню Аккаунта, если нужно различать его от DEFAULT
-    // public const ACCOUNT_MENU = 4;
+    public const AWAITING_NEW_ACCOUNT_NAME = 4;  // Используем свободный номер
+    public const AWAITING_NEW_ACCOUNT_EMAIL = 5;
+    public const AWAITING_NEW_ACCOUNT_PASSWORD = 6;
+    public const AWAITING_ACCOUNT_SWITCH_SELECTION = 7;
 
     // Запись Тренировки
     public const LOGGING_TRAINING_MENU = 10; // Меню "Добавить/Завершить"
