@@ -8,6 +8,17 @@ use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 class Kernel extends ConsoleKernel
 {
     /**
+     * The Artisan commands provided by your application.
+     *
+     * @var array
+     */
+    // Убедись, что твоя команда здесь указана, или просто удали этот массив,
+    // чтобы Laravel использовал автообнаружение (рекомендуется).
+    // protected $commands = [
+    //     \App\Console\Commands\RunTelegramBot::class,
+    // ];
+
+    /**
      * Define the application's command schedule.
      */
     protected function schedule(Schedule $schedule): void
@@ -20,7 +31,7 @@ class Kernel extends ConsoleKernel
      */
     protected function commands(): void
     {
-        $this->load(__DIR__.'/Commands');
+        $this->load(__DIR__.'/Commands'); // Стандартная загрузка команд из папки
 
         require base_path('routes/console.php');
     }

@@ -1,16 +1,16 @@
 {
     "390311595": {
-        "active_account_email": "test@mama.com",
+        "active_account_email": "new@new.com",
         "accounts": {
-            "test@mama.com": {
-                "name": "test",
-                "email": "test@mama.com",
-                "password": "$2y$10$a5L0nOWXKjWTdgRhpk\/wVuePU\/bFmJq4SGamNI9yGzNqJFKrd1qPa"
+            "new@new.com": {
+                "name": "new",
+                "email": "new@new.com",
+                "password": "$2y$10$Dj9Z8QZobkQIYv9.zLUeCeKW7TcVsq2J82en4rj6XE0D9F8NohNFy"
             },
-            "test2@mama.com": {
-                "name": "test2",
-                "email": "test2@mama.com",
-                "password": "$2y$10$0NwzBmsCmErQ537B5\/MHqOHGKI1GLYh5xQdlExOzhk2LlIVrkGnyC"
+            "new2@new.com": {
+                "name": "new2",
+                "email": "new2@new.com",
+                "password": "$2y$10$FTfgj6hDes27qxJeGTmeROuHgS6iAYmjAd59sOeNg5kyrHV6\/kq12"
             }
         }
     }

@@ -12,12 +12,12 @@ use Telegram\Bot\Objects\Message;
 use Bot\Constants\States;         // Подключаем класс с константами
 use Bot\Keyboard\KeyboardService; // Подключаем сервис клавиатур
 use Bot\Service\DataStorageService;
-
-#use Bot\Keyboard\KeyboardHelper; // <-- Добавь эту строку
+use Illuminate\Support\Facades\Log;
 
 
 class BotKernel
 {
+    
     private Api $telegram;
     private int $updateId = 0;
     private KeyboardService $keyboardService;
@@ -33,53 +33,37 @@ class BotKernel
     // Структура упражнений
     private array $exercises = [];
 
-    
 
-    public function __construct(string $token)
-    {
-        if (empty($token)) {
-            throw new \InvalidArgumentException('Telegram Bot Token is required.');
-        }
-        $this->telegram = new Api($token);
+    public function __construct(
+        Api $telegram, // Принимаем готовый Api
+        DataStorageService $dataStorage, // Принимаем готовый сервис данных
+        KeyboardService $keyboardService // Принимаем готовый сервис клавиатур
+    ) {
+        $this->telegram = $telegram;
+        $this->dataStorage = $dataStorage;
+        $this->keyboardService = $keyboardService;
 
-        // Определяем пути к файлам относительно КОРНЯ ПРОЕКТА
-        // __DIR__ указывает на текущую папку (app/Bot), поэтому поднимаемся на 2 уровня
-        $basePath = dirname(__DIR__, 2); // Корень проекта
-        $storagePath = $basePath . '/storage/bot'; // Путь к папке storage/bot
-
-
-        // Создаем папку, если ее нет (добавим проверку)
-        if (!is_dir($storagePath)) {
-            if (!mkdir($storagePath, 0775, true) && !is_dir($storagePath)) {
-                // Не удалось создать папку, выбрасываем исключение или пишем лог
-                throw new \RuntimeException(sprintf('Directory "%s" was not created', $storagePath));
-            }
-            echo "Created storage directory: {$storagePath}\n";
-        }
-
-        $this->keyboardService = new KeyboardService();
-
-        $this->dataStorage = new DataStorageService($storagePath);
+        // Загружаем данные из сервиса (остается)
         $this->userData = $this->dataStorage->getAllUserData();
         $this->userProducts = $this->dataStorage->getAllUserProducts();
         $this->diaryData = $this->dataStorage->getAllDiaryData();
 
-        $this->loadExercises(); // Загружаем структуру упражнений
-        echo "BotKernel Initialized.\n";
+        $this->loadExercises(); // Загрузка упражнений (остается)
+        echo "BotKernel Initialized via Laravel Container.\n"; // Изменено сообщение
     }
 
     public function run(): void
     {
-        echo "Starting Bot Kernel run loop...\n";
+        Log::info("Starting Bot Kernel run loop...");
         while (true) {
             try {
                 $updates = $this->telegram->getUpdates(['offset' => $this->updateId + 1, 'timeout' => 30]);
             } catch (TelegramSDKException $e) {
-                echo "Telegram SDK Error: " . $e->getMessage() . "\n";
+                Log::error("Telegram SDK Error: " . $e->getMessage());
                 sleep(5);
                 continue;
             } catch (\Throwable $e) {
-                echo "General Error getting updates: " . $e->getMessage() . "\n";
+                Log::error("General Error getting updates: " . $e->getMessage(), ['exception' => $e]);
                 sleep(10);
                 continue;
             }
@@ -115,14 +99,16 @@ class BotKernel
                     // Вызываем метод обработки сообщения
                     $this->handleMessage($chatId, $text, $message); // Передаем объект message для getReplyToMessage
                 } catch (\Throwable $e) {
-                    echo "Error processing message for chat ID {$chatId}: " . $e->getMessage() . "\n";
-                    echo $e->getTraceAsString() . "\n";
+                    Log::error("Error processing message for chat ID {$chatId}: " . $e->getMessage(), [
+                        'exception' => $e,
+                        'chat_id' => $chatId,
+                        'text' => $text,
+                    ]);
                     try {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка.']);
-                        $this->userStates[$chatId] = States::DEFAULT;
-                        unset($this->userSelections[$chatId]);
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла внутренняя ошибка. Попробуйте позже.']);
+                        $this->userStates[$chatId] = States::DEFAULT; unset($this->userSelections[$chatId]);
                     } catch (\Throwable $ex) {
-                        echo "Could not send error message to user {$chatId}.\n";
+                        Log::error("Could not send error message to user {$chatId}.", ['exception' => $ex]);
                     }
                 }
             }
@@ -272,10 +258,6 @@ class BotKernel
         return rtrim($message);
     }
 
-    /**
-     * Обрабатывает нажатие кнопки "Назад" ВО ВРЕМЯ многошагового ввода.
-     * Возвращает true, если "Назад" было обработано для состояния ввода, иначе false.
-     */
     private function handleBackDuringInput(int $chatId, Message $message, int $currentState): bool
     {
         $currentMode = $this->userSelections[$chatId]['mode'] ?? null;
@@ -435,7 +417,7 @@ class BotKernel
             ]);
             return true; // "Назад" обработано
         }
-    // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
+
 
 
         // Если ни одно из условий выше не сработало
@@ -1390,10 +1372,6 @@ class BotKernel
     }
 
 
-    // Добавь этот метод в класс BotKernel, если его еще нет
-    /**
-     * Обрабатывает команды и кнопки в основных меню.
-     */
     private function handleMenuCommands(int $chatId, string $text, Message $message, int $currentState): void
     {
         // Проверка на регистрацию для большинства команд
@@ -2014,7 +1992,11 @@ class BotKernel
                 $name = $newData['name'];
                 $email = $newData['email'];
 
-                $this->userData[$chatId]['accounts'][$email] = [ /* ... данные аккаунта ... */ ];
+                $this->userData[$chatId]['accounts'][$email] = [
+                    'name' => $name,
+                    'email' => $email,
+                    'password' => $hashedPassword
+                ];
                 $this->userData[$chatId]['active_account_email'] = $email;
 
                 $this->userStates[$chatId] = States::DEFAULT;
