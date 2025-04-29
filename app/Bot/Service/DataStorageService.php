@@ -8,6 +8,8 @@ class DataStorageService
     private string $userDataFile;
     private string $userProductsFile;
     private string $diaryFile;
+    private string $trainingLogFile;
+    private array $trainingLogData = []; // <-- ДОБАВИТЬ
 
     // Массивы для хранения загруженных данных внутри сервиса
     private array $userData = [];
@@ -27,6 +29,7 @@ class DataStorageService
         $this->userDataFile = $storagePath . '/bot_users.json';
         $this->userProductsFile = $storagePath . '/bot_products.json';
         $this->diaryFile = $storagePath . '/bot_diary.json';
+        $this->trainingLogFile = $storagePath . '/bot_trainings.json';
 
         // Загружаем данные при инициализации сервиса
         $this->loadAllData();
@@ -47,6 +50,10 @@ class DataStorageService
     public function getAllDiaryData(): array
     {
         return $this->diaryData;
+    }
+    public function getAllTrainingLogData(): array
+    {
+        return $this->trainingLogData;
     }
 
     // --- Публичные методы для сохранения ВСЕХ данных ---
@@ -89,6 +96,15 @@ class DataStorageService
         // }
         return $this->saveJsonData($this->diaryData, $this->diaryFile);
     }
+    // ---> ДОБАВИТЬ МЕТОД СОХРАНЕНИЯ ЛОГОВ ТРЕНИРОВОК <---
+    public function saveAllTrainingLogData(array $allTrainingLogData): bool
+    {
+        $this->trainingLogData = $allTrainingLogData; // Обновляем данные внутри сервиса
+        // Можно добавить сортировку дат, если нужно
+        // ksort($this->trainingLogData);
+        // foreach ($this->trainingLogData as &$accountsData) { ... }
+        return $this->saveJsonData($this->trainingLogData, $this->trainingLogFile);
+    }
 
 
     // --- Приватные методы загрузки/сохранения (перенесены из BotKernel) ---
@@ -98,6 +114,7 @@ class DataStorageService
         $this->userData = $this->loadJsonData($this->userDataFile, "user data");
         $this->userProducts = $this->loadJsonData($this->userProductsFile, "user products");
         $this->diaryData = $this->loadJsonData($this->diaryFile, "diary data");
+        $this->trainingLogData = $this->loadJsonData($this->trainingLogFile, "training logs");
     }
 
     /**

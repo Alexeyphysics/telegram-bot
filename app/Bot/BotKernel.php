@@ -27,6 +27,7 @@ class BotKernel
     private array $userData = [];
     private array $userProducts = [];
     private array $diaryData = [];
+    private array $trainingLogData = []; 
     private array $userSelections = [];
     private array $currentTrainingLog = [];
 
@@ -35,21 +36,22 @@ class BotKernel
 
 
     public function __construct(
-        Api $telegram, // Принимаем готовый Api
-        DataStorageService $dataStorage, // Принимаем готовый сервис данных
-        KeyboardService $keyboardService // Принимаем готовый сервис клавиатур
+        Api $telegram,
+        DataStorageService $dataStorage,
+        KeyboardService $keyboardService
     ) {
         $this->telegram = $telegram;
         $this->dataStorage = $dataStorage;
         $this->keyboardService = $keyboardService;
 
-        // Загружаем данные из сервиса (остается)
+        // Загружаем данные из сервиса
         $this->userData = $this->dataStorage->getAllUserData();
         $this->userProducts = $this->dataStorage->getAllUserProducts();
         $this->diaryData = $this->dataStorage->getAllDiaryData();
+        $this->trainingLogData = $this->dataStorage->getAllTrainingLogData(); // <-- ДОБАВИТЬ ЗАГРУЗКУ
 
-        $this->loadExercises(); // Загрузка упражнений (остается)
-        echo "BotKernel Initialized via Laravel Container.\n"; // Изменено сообщение
+        $this->loadExercises();
+        echo "BotKernel Initialized via Laravel Container.\n";
     }
 
     public function run(): void
@@ -92,6 +94,9 @@ class BotKernel
                 if (!isset($this->userProducts[$chatId])) {
                     $this->userProducts[$chatId] = [];
                 }
+                if (!isset($this->trainingLogData[$chatId])) {
+                    $this->trainingLogData[$chatId] = [];
+                }
 
                 echo "Получено сообщение: $text (Chat ID: $chatId), State: " . ($this->userStates[$chatId] ?? States::DEFAULT) . "\n";
 
@@ -119,7 +124,6 @@ class BotKernel
   
 
      //Основной метод обработки входящих сообщений.
-
     private function handleMessage(int $chatId, string $text, Message $message): void
     {
         $currentState = $this->userStates[$chatId] ?? States::DEFAULT;
@@ -1587,32 +1591,73 @@ class BotKernel
                  }
                 break;
             case 'Завершить запись тренировки':
-                 if ($currentState === States::LOGGING_TRAINING_MENU) {
-                     $logCount = isset($this->currentTrainingLog[$chatId]) ? count($this->currentTrainingLog[$chatId]) : 0;
-                     if ($logCount > 0) {
-                         // TODO: Реализовать сохранение лога тренировки в файл или БД
-                         echo "Завершение тренировки для $chatId ({$logCount} подходов/упр.): ";
-                         print_r($this->currentTrainingLog[$chatId]); echo "\n";
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => "Тренировка завершена и записана ({$logCount} подходов/упр.). Отличная работа!",
-                             'reply_markup' => $this->keyboardService->makeMainMenu() // Возврат в главное меню
-                         ]);
-                     } else {
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => 'Вы не добавили ни одного упражнения/подхода. Запись отменена.',
-                             'reply_markup' => $this->keyboardService->makeTrainingMenu() // Возврат в меню тренировок
-                         ]);
-                     }
-                     // Сброс в любом случае
-                     $this->userStates[$chatId] = States::DEFAULT;
-                     unset($this->currentTrainingLog[$chatId]);
-                     unset($this->userSelections[$chatId]);
-                 }
-                break;
+                if ($currentState === States::LOGGING_TRAINING_MENU) {
+                    $logCount = isset($this->currentTrainingLog[$chatId]) ? count($this->currentTrainingLog[$chatId]) : 0;
+                    if ($logCount > 0) {
+                        // ---> ДОБАВЛЕНА ЛОГИКА СОХРАНЕНИЯ <---
+                        $activeEmail = $this->getActiveAccountEmail($chatId);
+                        if (!$activeEmail) {
+                                Log::error("Не удалось получить активный email для chatId {$chatId} при сохранении тренировки.");
+                                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка сохранения тренировки: не удалось определить аккаунт.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                                // Сбрасываем состояние и лог, но не сохраняем
+                                $this->userStates[$chatId] = States::DEFAULT; unset($this->currentTrainingLog[$chatId]); unset($this->userSelections[$chatId]);
+                                break; // Выходим из case
+                        }
+    
+                        $currentTimestamp = time(); // Получаем текущее время
+                        $currentDate = date('Y-m-d', $currentTimestamp); // Дата из timestamp
+                        $logToSave = $this->currentTrainingLog[$chatId]; // Упражнения из текущей сессии
 
-            // --- Меню Питание и его подпункты ---
+                        // Создаем объект тренировки
+                        $trainingSession = [
+                            'date' => $currentDate,
+                            'timestamp' => $currentTimestamp,
+                            'log' => $logToSave
+                        ];
+
+                        // Инициализируем массив для chatId, если его нет
+                        if (!isset($this->trainingLogData[$chatId])) {
+                            $this->trainingLogData[$chatId] = [];
+                        }
+                        // Инициализируем массив для email, если его нет
+                        if (!isset($this->trainingLogData[$chatId][$activeEmail])) {
+                            $this->trainingLogData[$chatId][$activeEmail] = [];
+                        }
+
+                        // Добавляем новую тренировку в КОНЕЦ массива для данного аккаунта
+                        $this->trainingLogData[$chatId][$activeEmail][] = $trainingSession;
+
+                        // Сохраняем все данные логов тренировок
+                        if ($this->dataStorage->saveAllTrainingLogData($this->trainingLogData)) {
+                            Log::info("Тренировка сохранена для chatId {$chatId}, email {$activeEmail}, timestamp {$currentTimestamp}");
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Тренировка завершена и записана ({$logCount} подходов/упр.). Отличная работа!",
+                                'reply_markup' => $this->keyboardService->makeMainMenu()
+                        ]);
+                        } else {
+                            Log::error("Не удалось сохранить файл логов тренировок.");
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка при сохранении тренировки.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                        }
+                        // ---> КОНЕЦ ЛОГИКИ СОХРАНЕНИЯ <---
+    
+                    } else { // Если logCount == 0
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => 'Вы не добавили ни одного упражнения/подхода. Запись отменена.',
+                            'reply_markup' => $this->keyboardService->makeTrainingMenu() // Возврат в меню тренировок
+                        ]);
+                    }
+                    // Сброс состояния и временных данных в любом случае
+                    $this->userStates[$chatId] = States::DEFAULT;
+                    unset($this->currentTrainingLog[$chatId]); // Очищаем временный лог
+                    unset($this->userSelections[$chatId]);
+                }
+                break; // Конец case
+
+            
+
+                // --- Меню Питание и его подпункты ---
             case 'Питание':
                 if ($currentState === States::DEFAULT) {
                     $this->telegram->sendMessage([
@@ -1882,15 +1927,8 @@ class BotKernel
                  }
                 break;
         }
-
     }
 
-
-
-        /**
-     * Получает email активного аккаунта для данного chatId.
-     * Возвращает null, если пользователь или активный аккаунт не найдены.
-     */
     private function getActiveAccountEmail(int $chatId): ?string
     {
         // Проверяем, есть ли вообще запись для chatId и установлен ли активный email
@@ -1910,10 +1948,7 @@ class BotKernel
         return null; // Пользователь или активный аккаунт не найдены
     }
 
-    /**
-     * Получает данные активного аккаунта для данного chatId.
-     * Возвращает массив с данными или null, если аккаунт не найден.
-     */
+   
     private function getActiveAccountData(int $chatId): ?array
     {
         $activeEmail = $this->getActiveAccountEmail($chatId);
@@ -1923,9 +1958,7 @@ class BotKernel
         }
         return null;
     }
-    /**
-     * Обрабатывает состояния добавления НОВОГО аккаунта к существующему пользователю.
-     */
+   
     private function handleNewAccountState(int $chatId, string $text, Message $message, int $currentState): void
     {
         if ($currentState === States::AWAITING_NEW_ACCOUNT_NAME) {

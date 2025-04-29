@@ -13,5 +13,15 @@
                 "password": "$2y$10$FTfgj6hDes27qxJeGTmeROuHgS6iAYmjAd59sOeNg5kyrHV6\/kq12"
             }
         }
+    },
+    "5255105248": {
+        "active_account_email": "Aa@aa.com",
+        "accounts": {
+            "Aa@aa.com": {
+                "name": "Санек",
+                "email": "Aa@aa.com",
+                "password": "$2y$10$3BGgGq0XzVB1TgCxo2AMzef0IrgUxjY4AcnS92ceRAa7lUO89bX.e"
+            }
+        }
     }
 }
