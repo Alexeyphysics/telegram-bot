@@ -1898,7 +1898,7 @@ class BotKernel
                      ]);
                  }
                 break;
-                case 'Удалить информацию о продукте':
+                case '🗑️ Удалить продукт':
                     $activeEmail = $this->getActiveAccountEmail($chatId);
                     if (!$activeEmail) { /* Ошибка: нет активного аккаунта */ $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт не определен.',
                          'reply_markup' => $this->keyboardService->makeAccountMenu()]); $this->userStates[$chatId] = States::DEFAULT; return; }

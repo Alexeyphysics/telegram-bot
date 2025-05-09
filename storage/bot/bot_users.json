@@ -1,6 +1,6 @@
 {
     "390311595": {
-        "active_account_email": "new@new.com",
+        "active_account_email": "kondr@kondr.com",
         "accounts": {
             "new@new.com": {
                 "name": "new",
@@ -11,6 +11,11 @@
                 "name": "new2",
                 "email": "new2@new.com",
                 "password": "$2y$10$FTfgj6hDes27qxJeGTmeROuHgS6iAYmjAd59sOeNg5kyrHV6\/kq12"
+            },
+            "kondr@kondr.com": {
+                "name": "Алексей",
+                "email": "kondr@kondr.com",
+                "password": "$2y$10$Yx8dD7w7a8F\/MllUt20GBOETLz5zzpmfpuTBDNbDS1O32FP153\/C2"
             }
         }
     },
