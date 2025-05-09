@@ -130,7 +130,7 @@ class BotKernel
 
         // 1. Обработка кнопки "Назад" ВО ВРЕМЯ ввода данных
         // Вызываем метод, только если текст == "Назад"
-        if ($text === 'Назад' && $this->handleBackDuringInput($chatId, $message, $currentState)) {
+        if ($text === '⬅️ Назад' && $this->handleBackDuringInput($chatId, $message, $currentState)) {
             // Если handleBackDuringInput вернул true, значит, "Назад" было обработано
             // для состояния ввода, и мы можем завершить обработку этого сообщения.
             return;
@@ -168,8 +168,9 @@ class BotKernel
 
         // Состояния Дневника Питания
         // Включаем все шаги добавления, удаления и просмотра
-        if (($currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_ADD_MEAL_CONFIRM_MANUAL && $currentState != States::DIARY_MENU) || // Добавление
-            $currentState === States::AWAITING_DATE_DELETE_MEAL ||      // Ввод даты удаления
+        if (($currentState === States::AWAITING_DATE_MANUAL_ADD || $currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_ADD_MEAL_CONFIRM_MANUAL && $currentState != States::DIARY_MENU) || // Добавление
+            $currentState === States::AWAITING_DATE_DELETE_MEAL ||
+            $currentState === States::AWAITING_DATE_SEARCH_ADD ||      // Ввод даты удаления
             $currentState === States::AWAITING_MEAL_NUMBER_DELETE ||   // <-- Ввод номера удаления
             $currentState === States::AWAITING_DELETE_MEAL_CONFIRM ||   // <-- Подтверждение удаления
             $currentState === States::AWAITING_DATE_VIEW_MEAL)           // Ввод даты просмотра
@@ -335,60 +336,131 @@ class BotKernel
         // --- Дневник ---
         // Состояния: ввод опции, поиск, ввод грамм/имени/бжу, подтверждение добавления,
         // ввод даты удаления, ввод НОМЕРА удаления, подтверждение удаления, ввод даты просмотра
-        if (($currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_ADD_MEAL_CONFIRM_MANUAL && $currentState != States::DIARY_MENU) ||
+        if (
+            // Все шаги добавления (кроме самого меню DIARY_MENU, из которого "Назад" обрабатывается в handleMenuCommands)
+            ($currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_ADD_MEAL_CONFIRM_MANUAL && $currentState != States::DIARY_MENU) ||
+            // Добавлено новое состояние для ввода даты перед ручным вводом
+            $currentState === States::AWAITING_DATE_MANUAL_ADD ||
+            // Все шаги удаления (кроме самого меню DIARY_MENU)
             $currentState === States::AWAITING_DATE_DELETE_MEAL ||
-            $currentState === States::AWAITING_MEAL_NUMBER_DELETE || // <-- Учтено новое состояние
+            $currentState === States::AWAITING_DATE_SEARCH_ADD ||
+            $currentState === States::AWAITING_MEAL_NUMBER_DELETE ||
             $currentState === States::AWAITING_DELETE_MEAL_CONFIRM ||
-            $currentState === States::AWAITING_DATE_VIEW_MEAL)
-        {
-            $previousState = States::DEFAULT; $previousKeyboard = $this->keyboardService->makeMainMenu(); $messageText = 'Возврат в главное меню.';
-
-            // Логика возврата на предыдущий шаг
+            // Шаг просмотра
+            $currentState === States::AWAITING_DATE_VIEW_MEAL
+        ) {
+            $previousState = States::DEFAULT; // По умолчанию
+            $previousKeyboard = $this->keyboardService->makeMainMenu(); // По умолчанию
+            $messageText = 'Действие отменено.'; // По умолчанию
+    
+            // Определяем, куда вернуться
             if ($currentState === States::AWAITING_ADD_MEAL_OPTION) {
-                $previousState = States::DIARY_MENU; $previousKeyboard = $this->keyboardService->makeDiaryMenu(); $messageText = 'Возврат в меню Дневника.';
-            } elseif ($currentState === States::AWAITING_SEARCH_PRODUCT_NAME_ADD || $currentState === States::AWAITING_GRAMS_MANUAL_ADD) {
-                $previousState = States::AWAITING_ADD_MEAL_OPTION; $previousKeyboard = $this->keyboardService->makeAddMealOptionsMenu(); $messageText = 'Выберите способ добавления.';
-            } elseif ($currentState === States::AWAITING_GRAMS_SEARCH_ADD) {
-                $previousState = States::AWAITING_SEARCH_PRODUCT_NAME_ADD; $previousKeyboard = $this->keyboardService->makeBackOnly(); $messageText = 'Название продукта из сохраненных:';
-                unset($this->userSelections[$chatId]['diary_entry']['search_name_lower'], $this->userSelections[$chatId]['diary_entry']['search_name_original']);
-            } elseif ($currentState === States::AWAITING_PRODUCT_NAME_MANUAL_ADD) {
-                $previousState = States::AWAITING_GRAMS_MANUAL_ADD; $previousKeyboard = $this->keyboardService->makeBackOnly(); $messageText = 'Масса съеденного (г):';
-                unset($this->userSelections[$chatId]['diary_entry']['grams']);
-            // Условие изменено, убрано AWAITING_KCAL_MANUAL_ADD
-            } elseif ($currentState >= States::AWAITING_PROTEIN_MANUAL_ADD && $currentState <= States::AWAITING_CARBS_MANUAL_ADD) {
-                $previousState = $currentState - 1;
-                $promptKey = match ($previousState) { /* ... */ States::AWAITING_CARBS_MANUAL_ADD => 'fat', default => null };
-                $prevValue = $this->userSelections[$chatId]['diary_entry'][$promptKey] ?? '?';
-                $messageText = match ($previousState) { /* ... */ States::AWAITING_CARBS_MANUAL_ADD => "Жиры: {$prevValue}г\nУглеводы(г):", default => 'Введите пред. значение:' };
-                $keyToRemove = match ($currentState) { /* ... */ States::AWAITING_CARBS_MANUAL_ADD => 'fat', default => null };
-                if ($keyToRemove && isset($this->userSelections[$chatId]['diary_entry'])) { unset($this->userSelections[$chatId]['diary_entry'][$keyToRemove]); }
-                $previousKeyboard = $this->keyboardService->makeBackOnly();
-            } elseif ($currentState === States::AWAITING_ADD_MEAL_CONFIRM_SEARCH || $currentState === States::AWAITING_ADD_MEAL_CONFIRM_MANUAL) {
-                $previousState = States::AWAITING_ADD_MEAL_OPTION; $previousKeyboard = $this->keyboardService->makeAddMealOptionsMenu(); $messageText = 'Запись отменена.';
-                unset($this->userSelections[$chatId]['diary_entry']);
-            } elseif ($currentState === States::AWAITING_DATE_DELETE_MEAL || $currentState === States::AWAITING_DATE_VIEW_MEAL) {
-                $previousState = States::DIARY_MENU; $previousKeyboard = $this->keyboardService->makeDiaryMenu(); $messageText = 'Возврат в меню Дневника.';
-            // --- ДОБАВЛЕНА ОБРАБОТКА НОВОГО СОСТОЯНИЯ ---
-            } elseif ($currentState === States::AWAITING_MEAL_NUMBER_DELETE) {
-                // Возвращаемся в меню Дневника при отмене выбора номера
                 $previousState = States::DIARY_MENU;
                 $previousKeyboard = $this->keyboardService->makeDiaryMenu();
-                $messageText = 'Удаление отменено. Возврат в меню Дневника.';
-                unset($this->userSelections[$chatId]['diary_delete']); // Очищаем все данные для удаления
-            // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+                $messageText = 'Возврат в меню Дневника.';
+            }elseif ($currentState === States::AWAITING_DATE_SEARCH_ADD) {
+                $previousState = States::AWAITING_ADD_MEAL_OPTION;
+                $previousKeyboard = $this->keyboardService->makeAddMealOptionsMenu();
+                $messageText = 'Запись отменена. Выберите способ добавления.';
+                unset($this->userSelections[$chatId]['diary_entry']);
+            // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
+            } elseif ($currentState === States::AWAITING_DATE_MANUAL_ADD) { // <-- НОВОЕ: Назад из ввода даты для ручного добавления
+                $previousState = States::AWAITING_ADD_MEAL_OPTION;
+                $previousKeyboard = $this->keyboardService->makeAddMealOptionsMenu();
+                $messageText = 'Запись отменена. Выберите способ добавления.';
+                unset($this->userSelections[$chatId]['diary_entry']); // Очищаем, т.к. начали ввод
+            } elseif ($currentState === States::AWAITING_SEARCH_PRODUCT_NAME_ADD) {
+                $previousState = States::AWAITING_DATE_SEARCH_ADD; // <-- Изменено
+                $previousKeyboard = $this->keyboardService->makeBackOnly();
+                $messageText = 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":';
+                unset($this->userSelections[$chatId]['diary_entry']['date']); // Очищаем только дату
+            // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+            } elseif ($currentState === States::AWAITING_GRAMS_MANUAL_ADD) { // <-- ИЗМЕНЕНО: Назад из ввода граммов теперь на ввод даты
+                $previousState = States::AWAITING_DATE_MANUAL_ADD;
+                $previousKeyboard = $this->keyboardService->makeBackOnly();
+                $messageText = 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":';
+                // Очищаем только 'date', если она была сохранена на предыдущем шаге, остальное может понадобиться, если пользователь вернется сюда.
+                // Но лучше очищать все, что было введено после AWAITING_DATE_MANUAL_ADD
+                unset($this->userSelections[$chatId]['diary_entry']['date']); // Если 'date' было единственным, что мы сохранили до этого
+            } elseif ($currentState === States::AWAITING_GRAMS_SEARCH_ADD) {
+                $previousState = States::AWAITING_SEARCH_PRODUCT_NAME_ADD;
+                $previousKeyboard = $this->keyboardService->makeBackOnly();
+                $messageText = 'Название продукта из сохраненных:';
+                unset($this->userSelections[$chatId]['diary_entry']['search_name_lower'], $this->userSelections[$chatId]['diary_entry']['search_name_original']);
+            } elseif ($currentState === States::AWAITING_PRODUCT_NAME_MANUAL_ADD) { // Назад из ввода имени на ввод граммов
+                $previousState = States::AWAITING_GRAMS_MANUAL_ADD;
+                $previousKeyboard = $this->keyboardService->makeBackOnly();
+                // Восстанавливаем дату в сообщении, если она есть
+                $selectedDate = $this->userSelections[$chatId]['diary_entry']['date'] ?? date('Y-m-d'); // Берем сохраненную или текущую
+                $messageText = 'Дата: ' . date('d.m.Y', strtotime($selectedDate)) . "\nМасса съеденного (г) (или \"Назад\"):";
+                unset($this->userSelections[$chatId]['diary_entry']['grams']);
+            } elseif ($currentState >= States::AWAITING_PROTEIN_MANUAL_ADD && $currentState <= States::AWAITING_CARBS_MANUAL_ADD) {
+                // Возврат на предыдущий шаг ввода БЖУ
+                $previousState = $currentState - 1; // Переход на предыдущее состояние БЖУ (P->Name, F->P, C->F)
+                $promptKey = match ($previousState) {
+                    States::AWAITING_PRODUCT_NAME_MANUAL_ADD => 'grams', // Если вернулись к вводу имени, предыдущим был ввод граммов
+                    States::AWAITING_PROTEIN_MANUAL_ADD => 'name',
+                    States::AWAITING_FAT_MANUAL_ADD => 'protein',
+                    States::AWAITING_CARBS_MANUAL_ADD => 'fat',
+                    default => null
+                };
+                $prevValue = $this->userSelections[$chatId]['diary_entry'][$promptKey] ?? '?';
+                $messageText = match ($previousState) {
+                    States::AWAITING_PRODUCT_NAME_MANUAL_ADD => "Граммы: {$prevValue}\nНазвание продукта:",
+                    States::AWAITING_PROTEIN_MANUAL_ADD => "Название: {$prevValue}\nБелки(г) в порции:",
+                    States::AWAITING_FAT_MANUAL_ADD => "Белки: {$prevValue}г\nЖиры(г) в порции:",
+                    States::AWAITING_CARBS_MANUAL_ADD => "Жиры: {$prevValue}г\nУглеводы(г) в порции:",
+                    default => 'Введите предыдущее значение:'
+                };
+                $keyToRemove = match ($currentState) { // Что удаляем из временного хранилища
+                    States::AWAITING_PROTEIN_MANUAL_ADD => 'name',
+                    States::AWAITING_FAT_MANUAL_ADD => 'protein',
+                    States::AWAITING_CARBS_MANUAL_ADD => 'fat',
+                    default => null
+                };
+                if ($keyToRemove && isset($this->userSelections[$chatId]['diary_entry'])) {
+                    unset($this->userSelections[$chatId]['diary_entry'][$keyToRemove]);
+                }
+                $previousKeyboard = $this->keyboardService->makeBackOnly();
+            } elseif ($currentState === States::AWAITING_ADD_MEAL_CONFIRM_SEARCH || $currentState === States::AWAITING_ADD_MEAL_CONFIRM_MANUAL) {
+                // Возврат к выбору способа добавления
+                $previousState = States::AWAITING_ADD_MEAL_OPTION;
+                $previousKeyboard = $this->keyboardService->makeAddMealOptionsMenu();
+                $messageText = 'Запись отменена. Выберите способ добавления.';
+                unset($this->userSelections[$chatId]['diary_entry']); // Очищаем все временные данные для этой записи
+            } elseif ($currentState === States::AWAITING_DATE_DELETE_MEAL || $currentState === States::AWAITING_DATE_VIEW_MEAL) {
+                // Возврат в меню Дневника
+                $previousState = States::DIARY_MENU;
+                $previousKeyboard = $this->keyboardService->makeDiaryMenu();
+                $messageText = 'Возврат в меню Дневника.';
+                unset($this->userSelections[$chatId]['diary_delete']); // Очищаем, если что-то было для удаления
+            } elseif ($currentState === States::AWAITING_MEAL_NUMBER_DELETE) {
+                // Возврат к вводу даты для удаления
+                $previousState = States::AWAITING_DATE_DELETE_MEAL;
+                $previousKeyboard = $this->keyboardService->makeBackOnly();
+                $messageText = 'Введите дату приема пищи для удаления (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":';
+                unset($this->userSelections[$chatId]['diary_delete']); // Очищаем данные для удаления
             } elseif ($currentState === States::AWAITING_DELETE_MEAL_CONFIRM) {
-                $previousState = States::DIARY_MENU; $previousKeyboard = $this->keyboardService->makeDiaryMenu(); $messageText = 'Удаление отменено.';
-                unset($this->userSelections[$chatId]['diary_delete']);
+                // Возврат в меню Дневника
+                $previousState = States::DIARY_MENU;
+                $previousKeyboard = $this->keyboardService->makeDiaryMenu();
+                $messageText = 'Удаление отменено.';
+                unset($this->userSelections[$chatId]['diary_delete']); // Очищаем данные для удаления
             }
-
+    
             $this->userStates[$chatId] = $previousState;
-            // Очистка при отмене подтверждений (остается)
-            if (in_array($currentState, [ States::AWAITING_ADD_MEAL_CONFIRM_MANUAL, States::AWAITING_ADD_MEAL_CONFIRM_SEARCH, States::AWAITING_DELETE_MEAL_CONFIRM ])) {
+            // Очистка временных данных, если это было подтверждение (остается)
+            if (in_array($currentState, [
+                States::AWAITING_ADD_MEAL_CONFIRM_MANUAL,
+                States::AWAITING_ADD_MEAL_CONFIRM_SEARCH,
+                States::AWAITING_DELETE_MEAL_CONFIRM
+            ])) {
+                // Дополнительно убедимся, что эти ключи удалены, если не были удалены выше
                 unset($this->userSelections[$chatId]['diary_entry']);
                 unset($this->userSelections[$chatId]['diary_delete']);
             }
-
-            $this->telegram->sendMessage([ 'chat_id' => $chatId, 'text' => $messageText, 'reply_markup' => $previousKeyboard ]);
+    
+            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $messageText, 'reply_markup' => $previousKeyboard]);
             return true; // "Назад" обработано для Дневника
         }
 
@@ -605,7 +677,7 @@ class BotKernel
                         }
                     break; // Не забываем break
                 case States::AWAITING_SAVE_CONFIRMATION:
-                    if ($text === 'Да') {
+                    if ($text === '✅ Да') {
                         $activeEmail = $this->getActiveAccountEmail($chatId);
                         $pData = $this->userSelections[$chatId]['bju_product'] ?? null;
                         if ($pData && isset($pData['name'])) {
@@ -637,7 +709,7 @@ class BotKernel
                         }
                         $this->userStates[$chatId] = States::BJU_MENU; // Возвращаемся в меню БЖУ
                         unset($this->userSelections[$chatId]['bju_product']);
-                    } elseif ($text === 'Нет') {
+                    } elseif ($text === '❌ Нет') {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
                             'text' => 'Сохранение отменено.',
@@ -709,7 +781,7 @@ class BotKernel
                         }
                     break;
                 case States::AWAITING_DELETE_CONFIRMATION:
-                    if ($text === 'Да') {
+                    if ($text === '✅ Да') {
                     $activeEmail = $this->getActiveAccountEmail($chatId);
                     if (!$activeEmail) { /* Ошибка: нет активного аккаунта */ return; }
                         $productNameToDeleteLower = $this->userSelections[$chatId]['bju_product_to_delete'] ?? null;
@@ -731,7 +803,7 @@ class BotKernel
                         }
                         $this->userStates[$chatId] = States::BJU_MENU;
                         unset($this->userSelections[$chatId]['bju_product_to_delete']);
-                    } elseif ($text === 'Нет') {
+                    } elseif ($text === '❌ Нет') {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
                             'text' => 'Удаление отменено.',
@@ -788,7 +860,7 @@ class BotKernel
             case States::AWAITING_ADD_MEAL_OPTION:
                 $activeEmail = $this->getActiveAccountEmail($chatId);
                 if (!$activeEmail) { /* Ошибка */ return; }
-                if ($text === 'Поиск в базе знаний') {
+                if ($text === '🔍 Поиск в базе') {
                     if (empty($this->userProducts[$chatId][$activeEmail])) {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
@@ -796,20 +868,23 @@ class BotKernel
                             'reply_markup' => $this->keyboardService->makeAddMealOptionsMenu()
                         ]);
                     } else {
-                        $this->userStates[$chatId] = States::AWAITING_SEARCH_PRODUCT_NAME_ADD;
-                        $this->userSelections[$chatId]['diary_entry'] = ['date' => date('Y-m-d')];
+                        // ---> ИЗМЕНЕНО: Переходим на ввод даты <---
+                        $this->userStates[$chatId] = States::AWAITING_DATE_SEARCH_ADD;
+                        // Очищаем предыдущие данные, если были
+                        unset($this->userSelections[$chatId]['diary_entry']);
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => 'Название продукта из сохраненных (или "Назад"):',
+                            'text' => 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
                             'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
                     }
-                } elseif ($text === 'Записать БЖУ самому') {
-                    $this->userStates[$chatId] = States::AWAITING_GRAMS_MANUAL_ADD;
-                    $this->userSelections[$chatId]['diary_entry'] = ['date' => date('Y-m-d')];
+                } elseif ($text === '✍️ Записать БЖУ вручную') {
+                    $this->userStates[$chatId] = States::AWAITING_DATE_MANUAL_ADD;
+                    // Очищаем предыдущие данные, если были
+                    unset($this->userSelections[$chatId]['diary_entry']);
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
-                        'text' => 'Масса съеденного (г) (или "Назад"):',
+                        'text' => 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
                         'reply_markup' => $this->keyboardService->makeBackOnly()
                     ]);
                 } else {
@@ -820,10 +895,80 @@ class BotKernel
                     ]);
                 }
                 break;
+            case States::AWAITING_DATE_SEARCH_ADD:
+                $dateToLog = null;
+                // ... (код парсинга даты: 'сегодня', 'вчера', ДД.ММ.ГГГГ - точно такой же, как в AWAITING_DATE_MANUAL_ADD) ...
+                $normalizedText = strtolower(trim($text));
+                if ($normalizedText === 'вчера') { $dateToLog = date('Y-m-d', strtotime('-1 day')); }
+                elseif ($normalizedText === 'сегодня') { $dateToLog = date('Y-m-d'); }
+                elseif (preg_match('/^(\d{2})\.(\d{2})\.(\d{4})$/', $text, $matches)) {
+                    if (checkdate($matches[2], $matches[1], $matches[3])) { $dateToLog = "{$matches[3]}-{$matches[2]}-{$matches[1]}"; }
+                }
+    
+                if (!$dateToLog) {
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Некорректный формат даты. Введите ДД.ММ.ГГГГ, "сегодня" или "вчера", или "Назад".',
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+                } else {
+                    // Сохраняем дату во временное хранилище
+                    $this->userSelections[$chatId]['diary_entry'] = ['date' => $dateToLog];
+                    // Переходим к вводу названия продукта
+                    $this->userStates[$chatId] = States::AWAITING_SEARCH_PRODUCT_NAME_ADD;
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Дата: ' . date('d.m.Y', strtotime($dateToLog)) . "\nНазвание продукта из сохраненных (или \"Назад\"):",
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+                }
+                break;
+            case States::AWAITING_DATE_MANUAL_ADD:
+                $dateToLog = null;
+                $normalizedText = strtolower(trim($text));
+                if ($normalizedText === 'вчера') {
+                    $dateToLog = date('Y-m-d', strtotime('-1 day'));
+                } elseif ($normalizedText === 'сегодня') {
+                    $dateToLog = date('Y-m-d');
+                } elseif (preg_match('/^(\d{2})\.(\d{2})\.(\d{4})$/', $text, $matches)) {
+                    if (checkdate($matches[2], $matches[1], $matches[3])) {
+                        $dateToLog = "{$matches[3]}-{$matches[2]}-{$matches[1]}";
+                    }
+                }
+    
+                if (!$dateToLog) {
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => 'Некорректный формат даты. Введите ДД.ММ.ГГГГ, "сегодня" или "вчера", или "Назад".',
+                            'reply_markup' => $this->keyboardService->makeBackOnly()
+                        ]);
+                        // Состояние не меняем, даем еще попытку
+                } else {
+                    // Сохраняем дату во временное хранилище
+                    $this->userSelections[$chatId]['diary_entry'] = ['date' => $dateToLog];
+                    // Переходим к вводу граммов
+                    $this->userStates[$chatId] = States::AWAITING_GRAMS_MANUAL_ADD;
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Дата: ' . date('d.m.Y', strtotime($dateToLog)) . "\nМасса съеденного (г) (или \"Назад\"):",
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+                }
+                break;
 
             case States::AWAITING_SEARCH_PRODUCT_NAME_ADD:
                 $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
+             if (!$activeEmail) { /* Ошибка */ return; }
+
+             // Убедимся, что 'diary_entry' уже существует (должен быть создан на шаге ввода даты)
+             if (!isset($this->userSelections[$chatId]['diary_entry'])) {
+                 Log::error("Ошибка: diary_entry не установлен перед вводом имени продукта (поиск) для chatId {$chatId}");
+                 $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка. Пожалуйста, начните заново.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                 $this->userStates[$chatId] = States::DIARY_MENU;
+                 return;
+             }
+
+            $productNameLower = trim(mb_strtolower($text));
                 $productNameLower = trim(mb_strtolower($text));
                 if (isset($this->userProducts[$chatId][$activeEmail][$productNameLower])) {
                     $originalName = $this->findOriginalProductName($chatId, $productNameLower, $activeEmail);
@@ -879,7 +1024,7 @@ class BotKernel
                 break;
 
             case States::AWAITING_ADD_MEAL_CONFIRM_SEARCH:
-                if ($text === 'Да') {
+                if ($text === '✅ Да') {
                     $activeEmail = $this->getActiveAccountEmail($chatId);
                     if (!$activeEmail) { /* Ошибка */ return; }
                     $logData = $this->userSelections[$chatId]['diary_entry']['log'] ?? null;
@@ -904,7 +1049,7 @@ class BotKernel
                     }
                     $this->userStates[$chatId] = States::DIARY_MENU;
                     unset($this->userSelections[$chatId]['diary_entry']);
-                } elseif ($text === 'Нет') {
+                } elseif ($text === '❌ Нет') {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Запись отменена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
                     $this->userStates[$chatId] = States::DIARY_MENU;
                     unset($this->userSelections[$chatId]['diary_entry']);
@@ -917,6 +1062,14 @@ class BotKernel
                 if (!is_numeric($text) || $text <= 0 || $text > 5000) {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите вес порции в граммах (больше 0 и не более 5000) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
                 } else {
+                    // Убедимся, что 'diary_entry' уже существует (должен быть создан на шаге ввода даты)
+                    if (!isset($this->userSelections[$chatId]['diary_entry'])) {
+                        // Этого не должно произойти, если логика верна
+                        Log::error("Ошибка: diary_entry не установлен перед вводом грамм для chatId {$chatId}");
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка. Пожалуйста, начните заново.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                        $this->userStates[$chatId] = States::DIARY_MENU;
+                        return;
+                    }
                     $this->userSelections[$chatId]['diary_entry']['grams'] = (float)$text;
                     $this->userStates[$chatId] = States::AWAITING_PRODUCT_NAME_MANUAL_ADD;
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Граммы: {$text}г\nНазвание продукта:", 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
@@ -981,7 +1134,7 @@ class BotKernel
                 break;
 
             case States::AWAITING_ADD_MEAL_CONFIRM_MANUAL:
-                if ($text === 'Да') {
+                if ($text === '✅ Да') {
                     $activeEmail = $this->getActiveAccountEmail($chatId);
                     if (!$activeEmail) { /* Ошибка */ return; }
                     $logData = $this->userSelections[$chatId]['diary_entry'] ?? null;
@@ -1007,7 +1160,7 @@ class BotKernel
                     }
                     $this->userStates[$chatId] = States::DIARY_MENU;
                     unset($this->userSelections[$chatId]['diary_entry']);
-                } elseif ($text === 'Нет') {
+                } elseif ($text === '❌ Нет') {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Запись отменена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
                     $this->userStates[$chatId] = States::DIARY_MENU;
                     unset($this->userSelections[$chatId]['diary_entry']);
@@ -1106,7 +1259,7 @@ class BotKernel
             case States::AWAITING_DELETE_MEAL_CONFIRM:
                 $activeEmail = $this->getActiveAccountEmail($chatId);
                 if (!$activeEmail) { /* Ошибка */ return; }
-                if ($text === 'Да') {
+                if ($text === '✅ Да') {
                     $dateToDelete = $this->userSelections[$chatId]['diary_delete']['date'] ?? null;
                     $indexToDelete = $this->userSelections[$chatId]['diary_delete']['index'] ?? null;
                     $entryName = $this->userSelections[$chatId]['diary_delete']['entry']['name'] ?? '???';
@@ -1126,7 +1279,7 @@ class BotKernel
                     }
                     $this->userStates[$chatId] = States::DIARY_MENU;
                     unset($this->userSelections[$chatId]['diary_delete']);
-                } elseif ($text === 'Нет') {
+                } elseif ($text === '❌ Нет') {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Удаление отменено.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
                     $this->userStates[$chatId] = States::DIARY_MENU;
                     unset($this->userSelections[$chatId]['diary_delete']);
@@ -1429,7 +1582,7 @@ class BotKernel
             
 
 
-            case 'Аккаунт':
+            case '⚙️ Аккаунт':
                  if ($currentState === States::DEFAULT) {
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
@@ -1439,7 +1592,7 @@ class BotKernel
                     // Можно установить состояние $this->userStates[$chatId] = States::ACCOUNT_MENU;, если нужно
                  } // Иначе игнорируем, если мы не в главном меню
                 break;
-            case 'Вывести имя и почту':
+            case 'ℹ️ Имя и почта':
                     // ---> ИЗМЕНЕНО: Используем активный аккаунт <---
                     if (in_array($currentState, [States::DEFAULT, States::BJU_MENU, States::DIARY_MENU /*, States::ACCOUNT_MENU */])) { // Добавил другие меню на всякий случай
                         $activeAccountData = $this->getActiveAccountData($chatId);
@@ -1464,7 +1617,7 @@ class BotKernel
                      // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
                 break; // Не забываем break
             
-            case 'Посмотреть технику выполнения':
+            case '🤸 Посмотреть технику':
                     // Проверяем, что мы в главном меню или меню тренировок
                     if (in_array($currentState, [States::DEFAULT, States::LOGGING_TRAINING_MENU, States::DIARY_MENU, States::BJU_MENU /*, States::TRAINING_MENU */])) { // Добавил другие состояния, чтобы кнопка работала из разных мест главного уровня
                         $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; // Начинаем выбор упражнения
@@ -1477,7 +1630,7 @@ class BotKernel
                         ]);
                     }
                    break;
-            case 'Добавить аккаунт':
+            case '➕ Добавить аккаунт':
                         if (in_array($currentState, [States::DEFAULT, States::BJU_MENU, States::DIARY_MENU /*, States::ACCOUNT_MENU */])) { // Проверка текущего меню
                             // Начинаем процесс добавления нового аккаунта
                             $this->userStates[$chatId] = States::AWAITING_NEW_ACCOUNT_NAME;
@@ -1491,7 +1644,7 @@ class BotKernel
                         }
                 break;
 
-            case 'Переключить аккаунт':
+            case '🔄 Переключить аккаунт':
                 if (in_array($currentState, [States::DEFAULT, States::BJU_MENU, States::DIARY_MENU /*, States::ACCOUNT_MENU */])) {
                     // Проверяем, есть ли вообще аккаунты у пользователя
                     if (!isset($this->userData[$chatId]['accounts']) || count($this->userData[$chatId]['accounts']) < 1) {
@@ -1533,7 +1686,7 @@ class BotKernel
                 break;
 
             // --- Меню Тренировки и его подпункты ---
-            case 'Тренировки':
+            case '💪 Тренировки':
                 if ($currentState === States::DEFAULT) {
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
@@ -1543,7 +1696,7 @@ class BotKernel
                     // Можно установить состояние $this->userStates[$chatId] = States::TRAINING_MENU;
                  }
                 break;
-            case 'Записать тренировку':
+            case '➕ Записать тренировку':
                 if ($currentState === States::DEFAULT /* || $currentState === States::TRAINING_MENU */) {
                     $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU; // Переходим в режим записи
                     $this->currentTrainingLog[$chatId] = []; // Очищаем лог предыдущей тренировки
@@ -1555,7 +1708,7 @@ class BotKernel
                     ]);
                  }
                 break;
-            case 'Посмотреть прогресс в упражнениях':
+            case '📈 Посмотреть прогресс':
                  if ($currentState === States::DEFAULT /* || $currentState === States::TRAINING_MENU */) {
                      $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; // Начинаем выбор упражнения
                      $this->userSelections[$chatId] = ['mode' => 'view']; // Устанавливаем режим просмотра
@@ -1567,7 +1720,7 @@ class BotKernel
                      ]);
                  }
                 break;
-            case 'Вывести отстающие группы мышц':
+            case '📊 Отстающие группы':
                  if ($currentState === States::DEFAULT /* || $currentState === States::TRAINING_MENU */) {
                      $this->telegram->sendMessage([
                          'chat_id' => $chatId,
@@ -1578,7 +1731,7 @@ class BotKernel
                 break;
 
             // --- Кнопки меню Записи Тренировки ---
-            case 'Добавить упражнение':
+            case '➕ Добавить упражнение':
                 if ($currentState === States::LOGGING_TRAINING_MENU) {
                     $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; // Начинаем выбор
                     $this->userSelections[$chatId]['mode'] = 'log'; // Убедимся, что режим 'log'
@@ -1590,7 +1743,7 @@ class BotKernel
                     ]);
                  }
                 break;
-            case 'Завершить запись тренировки':
+            case '✅ Завершить запись':
                 if ($currentState === States::LOGGING_TRAINING_MENU) {
                     $logCount = isset($this->currentTrainingLog[$chatId]) ? count($this->currentTrainingLog[$chatId]) : 0;
                     if ($logCount > 0) {
@@ -1658,7 +1811,7 @@ class BotKernel
             
 
                 // --- Меню Питание и его подпункты ---
-            case 'Питание':
+            case '🍎 Питание':
                 if ($currentState === States::DEFAULT) {
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
@@ -1668,7 +1821,7 @@ class BotKernel
                     // Можно установить $this->userStates[$chatId] = States::NUTRITION_MENU;
                  }
                 break;
-            case 'Дневник':
+            case '📖 Дневник':
                 if ($currentState === States::DEFAULT /* || $currentState === States::NUTRITION_MENU */) {
                      $this->userStates[$chatId] = States::DIARY_MENU; // Переходим в меню дневника
                      $this->telegram->sendMessage([
@@ -1678,7 +1831,7 @@ class BotKernel
                      ]);
                  }
                 break;
-            case 'БЖУ продуктов':
+            case '🔍 БЖУ продуктов':
                  if ($currentState === States::DEFAULT /* || $currentState === States::NUTRITION_MENU */) {
                      $this->userStates[$chatId] = States::BJU_MENU; // Переходим в меню БЖУ
                      $this->telegram->sendMessage([
@@ -1690,7 +1843,7 @@ class BotKernel
                 break;
 
             // --- Кнопки меню Дневника ---
-            case 'Записать приём пищи':
+            case '➕ Записать приём пищи':
                  if ($currentState === States::DIARY_MENU) {
                      $this->userStates[$chatId] = States::AWAITING_ADD_MEAL_OPTION; // Ожидаем выбор способа
                      unset($this->userSelections[$chatId]['diary_entry']); // Очищаем старые данные
@@ -1701,7 +1854,7 @@ class BotKernel
                      ]);
                  }
                 break;
-            case 'Удалить приём пищи':
+            case '🗑️ Удалить приём пищи':
                 $activeEmail = $this->getActiveAccountEmail($chatId);
                 if (!$activeEmail) { /* Ошибка */ return; }
                  if ($currentState === States::DIARY_MENU) {
@@ -1722,7 +1875,7 @@ class BotKernel
                      }
                  }
                 break;
-            case 'Посмотреть рацион за дату':
+            case '🗓️ Посмотреть рацион':
                  if ($currentState === States::DIARY_MENU) {
                      $this->userStates[$chatId] = States::AWAITING_DATE_VIEW_MEAL; // Запрашиваем дату
                      $this->telegram->sendMessage([
@@ -1734,7 +1887,7 @@ class BotKernel
                 break;
 
             // --- Кнопки подменю БЖУ ---
-            case 'Сохранить информацию о продукте':
+            case '💾 Сохранить продукт':
                  if ($currentState === States::BJU_MENU) {
                      $this->userStates[$chatId] = States::AWAITING_PRODUCT_NAME_SAVE; // Начинаем ввод данных
                      unset($this->userSelections[$chatId]['bju_product']); // Очищаем старые данные
@@ -1790,7 +1943,7 @@ class BotKernel
                         }
                     }
                    break; // Не забываем break
-            case 'Сохранённые продукты':
+            case '📜 Сохранённые':
                 $activeEmail = $this->getActiveAccountEmail($chatId);
                 if (!$activeEmail) { /* Ошибка */ return; }
                 if ($currentState === States::BJU_MENU) {
@@ -1820,7 +1973,7 @@ class BotKernel
                     }
                 }
                 break;
-            case 'Поиск продуктов':
+            case '🔎 Поиск':
                 $activeEmail = $this->getActiveAccountEmail($chatId);
                 if (!$activeEmail) { /* Ошибка */ return; }
                  if ($currentState === States::BJU_MENU) {
@@ -1842,7 +1995,7 @@ class BotKernel
                 break;
 
             // --- Кнопка "Назад" (из ГЛАВНЫХ подменю) ---
-            case 'Назад':
+            case '⬅️ Назад':
                 // Определяем, из какого меню пришла команда "Назад"
                 if ($currentState === States::LOGGING_TRAINING_MENU) { // Из меню записи тренировки
                     $this->userStates[$chatId] = States::DEFAULT; // Возврат в меню тренировок (или главное?)

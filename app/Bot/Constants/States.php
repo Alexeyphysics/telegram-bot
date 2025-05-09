@@ -48,6 +48,8 @@ class States
     public const AWAITING_GRAMS_SEARCH_ADD = 63;
     public const AWAITING_ADD_MEAL_CONFIRM_SEARCH = 64;
     // -- Добавление вручную
+    public const AWAITING_DATE_MANUAL_ADD = 601;
+    public const AWAITING_DATE_SEARCH_ADD = 602; 
     public const AWAITING_GRAMS_MANUAL_ADD = 65;
     public const AWAITING_PRODUCT_NAME_MANUAL_ADD = 66;
     public const AWAITING_PROTEIN_MANUAL_ADD = 67;
