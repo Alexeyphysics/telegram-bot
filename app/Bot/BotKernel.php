@@ -1090,29 +1090,29 @@ class BotKernel
         switch ($currentState) {
             // --- Добавление приема пищи ---
             case States::AWAITING_ADD_MEAL_OPTION:
-                $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
                 if ($text === '🔍 Поиск в базе') {
-                    if (empty($this->userProducts[$chatId][$activeEmail])) {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Сначала сохраните продукты в "БЖУ продуктов".',
-                            'reply_markup' => $this->keyboardService->makeAddMealOptionsMenu()
-                        ]);
-                    } else {
-                        // ---> ИЗМЕНЕНО: Переходим на ввод даты <---
-                        $this->userStates[$chatId] = States::AWAITING_DATE_SEARCH_ADD;
-                        // Очищаем предыдущие данные, если были
-                        unset($this->userSelections[$chatId]['diary_entry']);
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
-                        ]);
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Активный аккаунт не определен.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                        $this->userStates[$chatId] = States::DIARY_MENU; // Возврат в меню дневника
+                        break;
                     }
+                    // Токен здесь пока не нужен, он понадобится позже при фактическом запросе к API
+
+                    // ---> УДАЛЕНА ПРОВЕРКА if (empty($this->userProducts...)) <---
+                    // Сразу переходим на ввод даты для добавления через поиск
+                    $this->userStates[$chatId] = States::AWAITING_DATE_SEARCH_ADD;
+                    unset($this->userSelections[$chatId]['diary_entry']); // Очищаем предыдущие данные для новой записи
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+                    // ---> КОНЕЦ ИЗМЕНЕНИЯ <---
+
                 } elseif ($text === '✍️ Записать БЖУ вручную') {
+                    // Эта часть остается без изменений, она уже переводит на ввод даты
                     $this->userStates[$chatId] = States::AWAITING_DATE_MANUAL_ADD;
-                    // Очищаем предыдущие данные, если были
                     unset($this->userSelections[$chatId]['diary_entry']);
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
@@ -1127,6 +1127,7 @@ class BotKernel
                     ]);
                 }
                 break;
+
             case States::AWAITING_DATE_SEARCH_ADD:
                 $dateToLog = null;
                 // ... (код парсинга даты: 'сегодня', 'вчера', ДД.ММ.ГГГГ - точно такой же, как в AWAITING_DATE_MANUAL_ADD) ...
@@ -1189,108 +1190,267 @@ class BotKernel
                 break;
 
             case States::AWAITING_SEARCH_PRODUCT_NAME_ADD:
+                $searchTermLower = trim(mb_strtolower($text));
+                if (empty($searchTermLower)) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Пожалуйста, введите название продукта для поиска или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
+                    break; // Остаемся в том же состоянии
+                }
+
                 $activeEmail = $this->getActiveAccountEmail($chatId);
-             if (!$activeEmail) { /* Ошибка */ return; }
+                $nutritionToken = $this->userData[$chatId]['accounts'][$activeEmail]['nutrition_api_token'] ?? null;
 
-             // Убедимся, что 'diary_entry' уже существует (должен быть создан на шаге ввода даты)
-             if (!isset($this->userSelections[$chatId]['diary_entry'])) {
-                 Log::error("Ошибка: diary_entry не установлен перед вводом имени продукта (поиск) для chatId {$chatId}");
-                 $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка. Пожалуйста, начните заново.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
-                 $this->userStates[$chatId] = States::DIARY_MENU;
-                 return;
-             }
+                if (!$activeEmail || !$nutritionToken) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса питания не определен.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                    $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                    break;
+                }
 
-            $productNameLower = trim(mb_strtolower($text));
-                $productNameLower = trim(mb_strtolower($text));
-                if (isset($this->userProducts[$chatId][$activeEmail][$productNameLower])) {
-                    $originalName = $this->findOriginalProductName($chatId, $productNameLower, $activeEmail);
-                    $this->userSelections[$chatId]['diary_entry']['search_name_lower'] = $productNameLower;
-                    $this->userSelections[$chatId]['diary_entry']['search_name_original'] = $originalName;
-                    $this->userStates[$chatId] = States::AWAITING_GRAMS_SEARCH_ADD;
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "Продукт '{$originalName}' найден.\nМасса (г):",
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                // Проверяем, что дата была сохранена на предыдущем шаге
+                $eatenDate = $this->userSelections[$chatId]['diary_entry']['date'] ?? null;
+                if (!$eatenDate) {
+                    Log::error("DIARY SEARCH ADD: Дата (eaten_at) не найдена в userSelections для chatId {$chatId}");
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка: дата приема пищи не была установлена. Пожалуйста, начните добавление заново.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                    $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                    break;
+                }
+
+                try {
+                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                    $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/saved-foods';
+
+                    Log::info("DIARY SEARCH ADD (FETCH ALL): Запрос всех сохраненных продуктов для поиска", ['url' => $serviceUrl, 'email' => $activeEmail, 'searchTerm' => $searchTermLower]);
+
+                    $response = $client->get($serviceUrl, [
+                        'headers' => [
+                            'Accept' => 'application/json',
+                            'Authorization' => 'Bearer ' . $nutritionToken
+                        ]
+                        // 'query' => ['per_page' => 100] // Опционально, если продуктов может быть много
                     ]);
-                } else {
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "Продукт '{$text}' не найден в ваших сохраненных. Попробуйте снова или 'Назад'.",
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
-                    ]);
+
+                    $statusCode = $response->getStatusCode();
+                    $responseBody = json_decode($response->getBody()->getContents(), true);
+                    Log::info("DIARY SEARCH ADD (FETCH ALL): Ответ от сервиса", ['status' => $statusCode, 'searchTerm' => $searchTermLower]);
+
+                    if ($statusCode === 200 && isset($responseBody['data'])) {
+                        $allProducts = $responseBody['data'];
+                        $foundProduct = null;
+
+                        if (!empty($allProducts)) {
+                            foreach ($allProducts as $product) {
+                                if (isset($product['food_name']) && mb_strtolower($product['food_name']) === $searchTermLower) {
+                                    $foundProduct = $product;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if ($foundProduct && isset($foundProduct['id']) && isset($foundProduct['food_name'])) {
+                            // Продукт найден, сохраняем его ID и имя, запрашиваем граммы
+                            $this->userSelections[$chatId]['diary_entry']['found_product_id'] = $foundProduct['id'];
+                            $this->userSelections[$chatId]['diary_entry']['found_product_name'] = $foundProduct['food_name'];
+                            // Сохраняем БЖУК найденного продукта на 100г, они понадобятся для отображения в подтверждении
+                            $this->userSelections[$chatId]['diary_entry']['found_product_p100'] = (float)($foundProduct['proteins'] ?? 0);
+                            $this->userSelections[$chatId]['diary_entry']['found_product_f100'] = (float)($foundProduct['fats'] ?? 0);
+                            $this->userSelections[$chatId]['diary_entry']['found_product_c100'] = (float)($foundProduct['carbs'] ?? 0);
+                            $this->userSelections[$chatId]['diary_entry']['found_product_kcal100'] = (float)($foundProduct['kcal'] ?? 0);
+
+
+                            $this->userStates[$chatId] = States::AWAITING_GRAMS_SEARCH_ADD;
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Найден продукт: '{$foundProduct['food_name']}'.\nВведите массу съеденного (г) или 'Назад':",
+                                'reply_markup' => $this->keyboardService->makeBackOnly()
+                            ]);
+                        } else {
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Продукт '{$text}' не найден в вашей базе сохраненных продуктов. Попробуйте другое название или добавьте его сначала в 'БЖУ продуктов'.",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu() // Возвращаем в меню дневника
+                            ]);
+                            $this->userStates[$chatId] = States::DIARY_MENU; // Сброс состояния
+                            unset($this->userSelections[$chatId]['diary_entry']);
+                        }
+                    } else {
+                        $errorMessage = $this->extractErrorMessage($responseBody, 'питания (поиск для дневника)');
+                        Log::warning("DIARY SEARCH ADD (FETCH ALL): Ошибка получения списка продуктов", ['status_code' => $statusCode, 'body' => $responseBody]);
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => "Не удалось выполнить поиск продуктов: {$errorMessage}",
+                            'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                        ]);
+                        $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                    }
+                } catch (\Throwable $e) {
+                    $this->handleGuzzleError($e, $chatId, "питания (поиск для дневника)");
+                    $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
                 }
                 break;
 
             case States::AWAITING_GRAMS_SEARCH_ADD:
-                // ---> ПОЛУЧАЕМ АКТИВНЫЙ EMAIL <---
-                $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
-                    if (!is_numeric($text) || $text <= 0 || $text > 5000) {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Некорректно. Введите вес порции в граммах (больше 0 и не более 5000) или "Назад".',
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
-                        ]);
-                    } else {
-                        $grams = (float)$text;
-                        $productNameLower = $this->userSelections[$chatId]['diary_entry']['search_name_lower'];
-                        $originalName = $this->userSelections[$chatId]['diary_entry']['search_name_original'];
-                        if (!isset($this->userProducts[$chatId][$activeEmail][$productNameLower])) {
-                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Данные продукта не найдены. Попробуйте снова.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
-                            $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']); return;
-                        }
-                        $baseBJU = $this->userProducts[$chatId][$activeEmail][$productNameLower];
-                        $p = round($baseBJU[0] * $grams / 100, 1);
-                        $f = round($baseBJU[1] * $grams / 100, 1);
-                        $c = round($baseBJU[2] * $grams / 100, 1);
-                        $kcal = round($baseBJU[3] * $grams / 100, 0);
-                        $this->userSelections[$chatId]['diary_entry']['log'] = [
-                            'name' => $originalName, 'grams' => $grams, 'p' => $p, 'f' => $f, 'c' => $c, 'kcal' => $kcal
-                        ];
-                        $this->userStates[$chatId] = States::AWAITING_ADD_MEAL_CONFIRM_SEARCH;
-                        $confirmMsg = "Добавить в дневник?\n{$originalName} - {$grams} г\nБ: {$p} Ж: {$f} У: {$c} К: {$kcal}";
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId, 'text' => $confirmMsg, 'reply_markup' => $this->keyboardService->makeConfirmYesNo()
-                        ]);
-                    }
+                $diaryEntryData = $this->userSelections[$chatId]['diary_entry'] ?? null;
+                // Проверяем, что все необходимые данные от предыдущего шага (поиска) есть
+                if (!$diaryEntryData ||
+                    !isset($diaryEntryData['date']) ||
+                    !isset($diaryEntryData['found_product_id']) ||
+                    !isset($diaryEntryData['found_product_name']) ||
+                    !isset($diaryEntryData['found_product_p100']) ||
+                    !isset($diaryEntryData['found_product_f100']) ||
+                    !isset($diaryEntryData['found_product_c100']) ||
+                    !isset($diaryEntryData['found_product_kcal100'])
+                ) {
+                    Log::error("DIARY SEARCH GRAMS: Неполные данные из шага поиска для chatId {$chatId}", ['selection' => $diaryEntryData]);
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка, данные о найденном продукте утеряны. Пожалуйста, начните добавление заново.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                    $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                    break;
+                }
+
+                if (!is_numeric($text) || $text <= 0 || $text > 5000) { // Валидация веса
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => "Некорректный вес. Введите число больше 0 и не более 5000 (г) или 'Назад'.",
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+                    break; // Остаемся в том же состоянии
+                }
+
+                $grams = (float)$text;
+
+                // Рассчитываем БЖУК для введенной порции
+                $p_port = round(($diaryEntryData['found_product_p100'] / 100) * $grams, 2);
+                $f_port = round(($diaryEntryData['found_product_f100'] / 100) * $grams, 2);
+                $c_port = round(($diaryEntryData['found_product_c100'] / 100) * $grams, 2);
+                // Калории для порции тоже рассчитаем, хотя API их может рассчитать сам или они не нужны для POST /eaten-foods
+                // Но для отображения пользователю они полезны.
+                $kcal_port = round(($diaryEntryData['found_product_kcal100'] / 100) * $grams, 2);
+                // Или можно пересчитать по БЖУ порции: $kcal_port = round($p_port * 4 + $f_port * 9 + $c_port * 4, 2);
+
+
+                // Сохраняем граммы и рассчитанные БЖУК порции
+                $this->userSelections[$chatId]['diary_entry']['grams'] = $grams;
+                $this->userSelections[$chatId]['diary_entry']['p_port'] = $p_port;
+                $this->userSelections[$chatId]['diary_entry']['f_port'] = $f_port;
+                $this->userSelections[$chatId]['diary_entry']['c_port'] = $c_port;
+                $this->userSelections[$chatId]['diary_entry']['kcal_port'] = $kcal_port; // Сохраняем для отображения
+
+                // Формируем сообщение для подтверждения
+                $productName = $diaryEntryData['found_product_name'];
+                $eatenDateFormatted = date('d.m.Y', strtotime($diaryEntryData['date']));
+
+                $confirmMsg = "Добавить в дневник на {$eatenDateFormatted}?\n";
+                $confirmMsg .= "{$productName} - {$grams} г\n";
+                $confirmMsg .= "Б: {$p_port}, Ж: {$f_port}, У: {$c_port}, К: {$kcal_port} (расчет.)";
+
+                $this->userStates[$chatId] = States::AWAITING_ADD_MEAL_CONFIRM_SEARCH;
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => $confirmMsg,
+                    'reply_markup' => $this->keyboardService->makeConfirmYesNo()
+                ]);
                 break;
 
             case States::AWAITING_ADD_MEAL_CONFIRM_SEARCH:
-                if ($text === '✅ Да') {
-                    $activeEmail = $this->getActiveAccountEmail($chatId);
-                    if (!$activeEmail) { /* Ошибка */ return; }
-                    $logData = $this->userSelections[$chatId]['diary_entry']['log'] ?? null;
-                    $logDate = $this->userSelections[$chatId]['diary_entry']['date'] ?? date('Y-m-d');
-                    if ($logData) {
-                        if (!isset($this->diaryData[$chatId][$activeEmail])) {
-                            $this->diaryData[$chatId][$activeEmail] = [];
-                        }
-                        if (!isset($this->diaryData[$chatId][$activeEmail][$logDate])) {
-                            $this->diaryData[$chatId][$activeEmail][$logDate] = [];
-                        }
-                        $this->diaryData[$chatId][$activeEmail][$logDate][] = $logData;
-                        $this->dataStorage->saveAllDiaryData($this->diaryData);
-                        $formattedDate = date('d.m.Y', strtotime($logDate));
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => "'{$logData['name']}' ({$logData['grams']}г) записано на {$formattedDate}.",
-                            'reply_markup' => $this->keyboardService->makeDiaryMenu()
-                        ]);
-                    } else {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Не удалось получить данные для записи.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
-                    }
-                    $this->userStates[$chatId] = States::DIARY_MENU;
-                    unset($this->userSelections[$chatId]['diary_entry']);
-                } elseif ($text === '❌ Нет') {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Запись отменена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
-                    $this->userStates[$chatId] = States::DIARY_MENU;
-                    unset($this->userSelections[$chatId]['diary_entry']);
-                } else {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Нажмите "Да" или "Нет".', 'reply_markup' => $this->keyboardService->makeConfirmYesNo() ]);
+                $diaryEntryData = $this->userSelections[$chatId]['diary_entry'] ?? null;
+                // Проверяем наличие всех необходимых данных
+                if (!$diaryEntryData ||
+                    !isset($diaryEntryData['date']) ||         // Дата приема пищи
+                    !isset($diaryEntryData['found_product_id']) || // ID найденного продукта
+                    !isset($diaryEntryData['grams'])            // Вес съеденного
+                ) {
+                    Log::error("DIARY SEARCH CONFIRM: Неполные данные для добавления в дневник (поиск) для chatId {$chatId}", ['selection' => $diaryEntryData]);
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка, данные для записи утеряны. Пожалуйста, начните добавление заново.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                    $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                    break;
                 }
+
+                if ($text === '✅ Да') {
+                    $activeEmail = $this->getActiveAccountEmail($chatId); // Нужен для логов, API использует токен
+                    $nutritionToken = $this->userData[$chatId]['accounts'][$activeEmail]['nutrition_api_token'] ?? null;
+
+                    if (!$activeEmail || !$nutritionToken) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса питания не определен.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                        $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                        break;
+                    }
+
+                    // Формируем payload для API
+                    $payload = [
+                        'food_id' => (int) $diaryEntryData['found_product_id'],
+                        'weight' => (float) $diaryEntryData['grams'],
+                        'eaten_at' => $diaryEntryData['date'] // Формат YYYY-MM-DD
+                    ];
+
+                    try {
+                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods';
+
+                        Log::info("DIARY ADD SEARCH: Requesting", ['url' => $serviceUrl, 'payload' => $payload, 'email' => $activeEmail]);
+
+                        $response = $client->post($serviceUrl, [
+                            'json' => $payload,
+                            'headers' => [
+                                'Accept' => 'application/json',
+                                'Authorization' => 'Bearer ' . $nutritionToken
+                            ]
+                        ]);
+
+                        $statusCode = $response->getStatusCode();
+                        $responseBody = json_decode($response->getBody()->getContents(), true);
+
+                        Log::info("DIARY ADD SEARCH: Response", ['status' => $statusCode, 'body' => $responseBody]);
+
+                        if ($statusCode === 201 && isset($responseBody['message']) && $responseBody['message'] === "Food saved successfully" && isset($responseBody['data'])) {
+                            // API возвращает данные о записанной еде, можно использовать food_name из ответа
+                            $savedFoodName = $responseBody['data']['food_name'] ?? ($diaryEntryData['found_product_name'] ?? 'Прием пищи');
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Прием пищи '{$savedFoodName}' успешно записан в дневник на сервере!",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                        } else {
+                            $errorMessage = $this->extractErrorMessage($responseBody, 'питания (дневник - поиск)');
+                            Log::warning("DIARY ADD SEARCH: Ошибка записи в дневник", ['status_code' => $statusCode, 'body' => $responseBody, 'sent_payload' => $payload]);
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Ошибка записи в дневник: {$errorMessage}",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->handleGuzzleError($e, $chatId, "питания (запись в дневник - поиск)");
+                    }
+
+                } elseif ($text === '❌ Нет') {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Запись в дневник отменена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                } else {
+                    // Если пользователь ввел что-то кроме "Да" или "Нет"
+                    // Повторяем сообщение подтверждения
+                    $productName = $diaryEntryData['found_product_name'] ?? 'Продукт';
+                    $grams = $diaryEntryData['grams'] ?? 0;
+                    $p_port = $diaryEntryData['p_port'] ?? 0;
+                    $f_port = $diaryEntryData['f_port'] ?? 0;
+                    $c_port = $diaryEntryData['c_port'] ?? 0;
+                    $kcal_port = $diaryEntryData['kcal_port'] ?? 0;
+                    $eatenDateFormatted = date('d.m.Y', strtotime($diaryEntryData['date'] ?? time()));
+
+                    $confirmMsg = "Добавить в дневник на {$eatenDateFormatted}?\n";
+                    $confirmMsg .= "{$productName} - {$grams} г\n";
+                    $confirmMsg .= "Б: {$p_port}, Ж: {$f_port}, У: {$c_port}, К: {$kcal_port} (расчет.)";
+
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => "Пожалуйста, нажмите \"✅ Да\" или \"❌ Нет\".\n\n" . $confirmMsg,
+                        'reply_markup' => $this->keyboardService->makeConfirmYesNo()
+                    ]);
+                    break; // Выходим из switch, но остаемся в состоянии AWAITING_ADD_MEAL_CONFIRM_SEARCH
+                }
+                // Сброс состояния и временных данных после Да/Нет
+                $this->userStates[$chatId] = States::DIARY_MENU;
+                unset($this->userSelections[$chatId]['diary_entry']);
                 break;
 
-            case States::AWAITING_GRAMS_MANUAL_ADD:
+            
+                case States::AWAITING_GRAMS_MANUAL_ADD:
                 if (!is_numeric($text) || $text <= 0 || $text > 5000) {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректно. Введите вес порции в граммах (больше 0 и не более 5000) или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
                 } else {
@@ -1366,46 +1526,95 @@ class BotKernel
                 break;
 
             case States::AWAITING_ADD_MEAL_CONFIRM_MANUAL:
+                $diaryEntryData = $this->userSelections[$chatId]['diary_entry'] ?? null;
+                if (!$diaryEntryData || !isset($diaryEntryData['date'], $diaryEntryData['grams'], $diaryEntryData['name'], $diaryEntryData['p'], $diaryEntryData['f'], $diaryEntryData['c'])) {
+                    Log::error("DIARY MANUAL CONFIRM: Неполные данные для добавления в дневник для chatId {$chatId}", ['selection' => $diaryEntryData]);
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка, не все данные были собраны. Попробуйте добавить заново.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                    $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                    break;
+                }
+
                 if ($text === '✅ Да') {
                     $activeEmail = $this->getActiveAccountEmail($chatId);
-                    if (!$activeEmail) { /* Ошибка */ return; }
-                    $logData = $this->userSelections[$chatId]['diary_entry'] ?? null;
-                    $logDate = $logData['date'] ?? date('Y-m-d');
-                    if ($logData && isset($logData['name']) && isset($logData['grams'])) {
-                        unset($logData['date']);
-                        if (!isset($this->diaryData[$chatId][$activeEmail])) {
-                            $this->diaryData[$chatId][$activeEmail] = [];
-                        }
-                        if (!isset($this->diaryData[$chatId][$activeEmail][$logDate])) {
-                            $this->diaryData[$chatId][$activeEmail][$logDate] = [];
-                        }
-                       $this->diaryData[$chatId][$activeEmail][$logDate][] = $logData;
-                        $this->dataStorage->saveAllDiaryData($this->diaryData);
-                        $formattedDate = date('d.m.Y', strtotime($logDate));
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => "'{$logData['name']}' ({$logData['grams']}г) записано на {$formattedDate}.",
-                            'reply_markup' => $this->keyboardService->makeDiaryMenu()
-                        ]);
-                    } else {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Не удалось получить данные для записи.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
+                    $nutritionToken = $this->userData[$chatId]['accounts'][$activeEmail]['nutrition_api_token'] ?? null;
+
+                    if (!$activeEmail || !$nutritionToken) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса питания не определен.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                        $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_entry']);
+                        break;
                     }
-                    $this->userStates[$chatId] = States::DIARY_MENU;
-                    unset($this->userSelections[$chatId]['diary_entry']);
+
+                    // Формируем payload для API
+                    $payload = [
+                        'food_name' => $diaryEntryData['name'],
+                        'proteins' => (float) $diaryEntryData['p'], // Белки за порцию
+                        'fats' => (float) $diaryEntryData['f'],     // Жиры за порцию
+                        'carbs' => (float) $diaryEntryData['c'],    // Углеводы за порцию
+                        'weight' => (float) $diaryEntryData['grams'],
+                        'eaten_at' => $diaryEntryData['date']       // Формат YYYY-MM-DD
+                    ];
+
+                    try {
+                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods';
+
+                        Log::info("DIARY ADD MANUAL: Requesting", ['url' => $serviceUrl, 'payload' => $payload, 'email' => $activeEmail]);
+
+                        $response = $client->post($serviceUrl, [
+                            'json' => $payload,
+                            'headers' => [
+                                'Accept' => 'application/json',
+                                'Authorization' => 'Bearer ' . $nutritionToken
+                            ]
+                        ]);
+
+                        $statusCode = $response->getStatusCode();
+                        $responseBody = json_decode($response->getBody()->getContents(), true);
+
+                        Log::info("DIARY ADD MANUAL: Response", ['status' => $statusCode, 'body' => $responseBody]);
+
+                        if ($statusCode === 201 && isset($responseBody['message']) && $responseBody['message'] === "Food saved successfully" && isset($responseBody['data']['food_name'])) {
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Прием пищи '{$responseBody['data']['food_name']}' успешно записан в дневник на сервере!",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                        } else {
+                            $errorMessage = $this->extractErrorMessage($responseBody, 'питания (дневник)');
+                            Log::warning("DIARY ADD MANUAL: Ошибка записи в дневник", ['status_code' => $statusCode, 'body' => $responseBody, 'sent_payload' => $payload]);
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Ошибка записи в дневник: {$errorMessage}",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->handleGuzzleError($e, $chatId, "питания (запись в дневник)");
+                    }
+
                 } elseif ($text === '❌ Нет') {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Запись отменена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
-                    $this->userStates[$chatId] = States::DIARY_MENU;
-                    unset($this->userSelections[$chatId]['diary_entry']);
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Запись в дневник отменена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
                 } else {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Нажмите "Да" или "Нет".', 'reply_markup' => $this->keyboardService->makeConfirmYesNo() ]);
+                    // Если пользователь ввел что-то кроме "Да" или "Нет"
+                    $confirmMsg = "Добавить в дневник?\n{$diaryEntryData['name']} - {$diaryEntryData['grams']} г\n";
+                    $confirmMsg .= "Б: {$diaryEntryData['p']} Ж: {$diaryEntryData['f']} У: {$diaryEntryData['c']} К: {$diaryEntryData['kcal']} (расчет.)";
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => "Пожалуйста, нажмите \"✅ Да\" или \"❌ Нет\".\n\n" . $confirmMsg,
+                        'reply_markup' => $this->keyboardService->makeConfirmYesNo()
+                    ]);
+                    break; // Выходим из switch, но не из if ($text === '✅ Да')
                 }
+                // Сброс состояния и временных данных после Да/Нет
+                $this->userStates[$chatId] = States::DIARY_MENU;
+                unset($this->userSelections[$chatId]['diary_entry']);
                 break;
 
             // --- Удаление приема пищи ---
             case States::AWAITING_DATE_DELETE_MEAL:
-                $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
                 $dateToDelete = null;
+                // ... (код парсинга даты 'сегодня', 'вчера', ДД.ММ.ГГГГ -> в $dateToDelete в формате YYYY-MM-DD) ...
+                // (этот код идентичен тому, что в States::AWAITING_DATE_VIEW_MEAL)
                 $normalizedText = strtolower(trim($text));
                 if ($normalizedText === 'вчера') { $dateToDelete = date('Y-m-d', strtotime('-1 day')); }
                 elseif ($normalizedText === 'сегодня') { $dateToDelete = date('Y-m-d'); }
@@ -1414,116 +1623,204 @@ class BotKernel
                 }
 
                 if (!$dateToDelete) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректный формат даты. Введите ДД.ММ.ГГГГ, "сегодня" или "вчера", или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректный формат даты...', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
                     break;
                 }
 
-                $formattedDate = date('d.m.Y', strtotime($dateToDelete));
-                if (empty($this->diaryData[$chatId][$activeEmail][$dateToDelete])) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Нет записей за {$formattedDate}. Возврат в меню Дневника.", 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                $nutritionToken = $this->userData[$chatId]['accounts'][$activeEmail]['nutrition_api_token'] ?? null;
+                if (!$activeEmail || !$nutritionToken) { /* ... ошибка нет аккаунта/токена ... */ $this->userStates[$chatId] = States::DIARY_MENU; break; }
+
+                try {
+                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                    $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods/show-by-date';
+                    $queryParams = ['date' => $dateToDelete];
+
+                    Log::info("DIARY DELETE (LIST): Запрос списка приемов пищи для удаления", ['url' => $serviceUrl, 'params' => $queryParams, 'email' => $activeEmail]);
+                    $response = $client->get($serviceUrl, ['headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer ' . $nutritionToken], 'query' => $queryParams]);
+                    $statusCode = $response->getStatusCode();
+                    $responseBody = json_decode($response->getBody()->getContents(), true);
+                    Log::info("DIARY DELETE (LIST): Ответ от сервиса", ['status' => $statusCode, 'body_preview' => substr(json_encode($responseBody), 0, 300)]);
+
+                    if ($statusCode === 200 && isset($responseBody['data']['items'])) {
+                        $eatenItems = $responseBody['data']['items'];
+                        if (empty($eatenItems)) {
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Нет записей за " . date('d.m.Y', strtotime($dateToDelete)) . ". Возврат в меню Дневника.",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                            $this->userStates[$chatId] = States::DIARY_MENU;
+                        } else {
+                            $deleteListMsg = "Какой прием пищи удалить за " . date('d.m.Y', strtotime($dateToDelete)) . "? (Введите номер или 'Назад')\n\n";
+                            $mealMap = []; // Для сохранения [номер => id_записи_дневника]
+                            $i = 1;
+                            foreach ($eatenItems as $item) {
+                                $deleteListMsg .= sprintf(
+                                    "%d. %s (%s г) - Б:%s Ж:%s У:%s К:%s\n", // Более кратко
+                                    $i,
+                                    $item['food_name'] ?? 'Без имени',
+                                    $item['weight'] ?? '0',
+                                    $item['proteins'] ?? '0', $item['fats'] ?? '0', $item['carbs'] ?? '0', $item['kcal'] ?? '0'
+                                );
+                                if (isset($item['id'])) {
+                                    $mealMap[$i] = $item['id']; // Сохраняем ID записи дневника
+                                }
+                                $i++;
+                            }
+                            $this->userSelections[$chatId]['diary_delete_map'] = $mealMap;
+                            $this->userStates[$chatId] = States::AWAITING_MEAL_NUMBER_DELETE;
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => rtrim($deleteListMsg), 'reply_markup' => $this->keyboardService->makeBackOnly()]);
+                        }
+                    } else { /* ... обработка ошибки API ... */ $this->userStates[$chatId] = States::DIARY_MENU; }
+                } catch (\Throwable $e) { $this->handleGuzzleError($e, $chatId, "питания (список для удаления)"); $this->userStates[$chatId] = States::DIARY_MENU; }
+                break;
+
+
+
+            case States::AWAITING_MEAL_NUMBER_DELETE:
+                $mealMap = $this->userSelections[$chatId]['diary_delete_map'] ?? null;
+
+                if (!$mealMap) {
+                    Log::error("DIARY DELETE NUMBER: diary_delete_map не найден для chatId {$chatId}");
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Произошла ошибка (данные для удаления не найдены). Пожалуйста, начните удаление заново из меню Дневника.',
+                        'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                    ]);
                     $this->userStates[$chatId] = States::DIARY_MENU;
+                    // Очищаем userSelections, чтобы избежать проблем при следующем заходе
+                    unset($this->userSelections[$chatId]['diary_delete_map']);
+                    unset($this->userSelections[$chatId]['diary_entry_id_to_delete']);
                     break;
                 }
 
-                // Выводим список и ждем номер
-                $mealListMsg = "Приемы пищи за {$formattedDate}:\n\n";
-                $i = 1;
-                $mealsForSelection = [];
-                foreach ($this->diaryData[$chatId][$activeEmail][$dateToDelete] as $index => $entry) {
-                    $mealListMsg .= sprintf("%d. %s (%g г) - Б:%g Ж:%g У:%g К:%g\n",
-                        $i, $entry['name'], $entry['grams'], $entry['p'], $entry['f'], $entry['c'], $entry['kcal']
-                    );
-                    $mealsForSelection[$i] = $index;
-                    $i++;
+                if (!ctype_digit($text) || !isset($mealMap[(int)$text])) {
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Неверный номер. Введите номер приема пищи из списка или "Назад".',
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+                    // Остаемся в том же состоянии, чтобы пользователь мог исправить ввод
+                    break;
                 }
-                $mealListMsg .= "\nВведите номер приема пищи для удаления (или 'Назад'):";
 
-                $this->userSelections[$chatId]['diary_delete'] = [
-                    'date' => $dateToDelete,
-                    'meal_indices' => $mealsForSelection
-                ];
-                $this->userStates[$chatId] = States::AWAITING_MEAL_NUMBER_DELETE; // Новое состояние
+                $selectedNumber = (int)$text;
+                $mealEntryIdToDelete = $mealMap[$selectedNumber]; // Получаем ID записи дневника
 
+                // Сохраняем ID для подтверждения на следующем шаге
+                $this->userSelections[$chatId]['diary_entry_id_to_delete'] = $mealEntryIdToDelete;
+
+                // Формируем текст для подтверждения.
+                // Чтобы получить имя продукта, нам нужно было бы сохранить весь список items
+                // на предыдущем шаге, или сделать еще один запрос (что неэффективно).
+                // Пока просто подтвердим удаление записи с ID.
+                // Если бы мы сохранили `eatenItems` в `$this->userSelections[$chatId]['last_eaten_items_for_delete']`
+                // на шаге AWAITING_DATE_DELETE_MEAL, то могли бы найти имя:
+                $mealNameToConfirm = "запись (ID: {$mealEntryIdToDelete})";
+                /*
+                $lastEatenItems = $this->userSelections[$chatId]['last_eaten_items_for_delete'] ?? [];
+                foreach ($lastEatenItems as $item) {
+                    if (isset($item['id']) && $item['id'] == $mealEntryIdToDelete) {
+                        $mealNameToConfirm = "'{$item['food_name']}' ({$item['weight']}г)";
+                        break;
+                    }
+                }
+                */
+
+                $confirmText = "Вы уверены, что хотите удалить прием пищи {$mealNameToConfirm}?";
+
+                $this->userStates[$chatId] = States::AWAITING_DELETE_MEAL_CONFIRM;
                 $this->telegram->sendMessage([
-                    'chat_id' => $chatId, 'text' => rtrim($mealListMsg), 'reply_markup' => $this->keyboardService->makeBackOnly()
+                    'chat_id' => $chatId,
+                    'text' => $confirmText,
+                    'reply_markup' => $this->keyboardService->makeConfirmYesNo()
                 ]);
+                // diary_delete_map больше не нужен, можно очистить здесь или после подтверждения
+                // unset($this->userSelections[$chatId]['diary_delete_map']);
                 break;
-
-            // case States::AWAITING_PRODUCT_NAME_DELETE_MEAL: // --- УДАЛЕНО ---
-            // case States::AWAITING_GRAMS_DELETE_MEAL:       // --- УДАЛЕНО ---
-
-            case States::AWAITING_MEAL_NUMBER_DELETE: // <-- НОВОЕ СОСТОЯНИЕ
-                $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
-                $deleteInfo = $this->userSelections[$chatId]['diary_delete'] ?? null;
-                $mealIndices = $deleteInfo['meal_indices'] ?? null;
-                $dateToDelete = $deleteInfo['date'] ?? null;
-
-                if (!$mealIndices || !$dateToDelete) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка. Попробуйте удалить снова.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
-                    $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_delete']); break;
-                }
-
-                if (!ctype_digit($text) || !isset($mealIndices[(int)$text])) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер. Введите номер из списка или "Назад".', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
-                } else {
-                    $numberToDelete = (int)$text;
-                    $indexToDelete = $mealIndices[$numberToDelete];
-
-                    if (!isset($this->diaryData[$chatId][$activeEmail][$dateToDelete][$indexToDelete])) {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Выбранная запись уже удалена или не найдена.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
-                        $this->userStates[$chatId] = States::DIARY_MENU; unset($this->userSelections[$chatId]['diary_delete']);
-                    } else {
-                        $entryToDelete = $this->diaryData[$chatId][$dateToDelete][$indexToDelete];
-                        $this->userSelections[$chatId]['diary_delete'] = [ // Перезаписываем, сохраняя только нужное
-                            'date' => $dateToDelete,
-                            'index' => $indexToDelete,
-                            'entry' => $entryToDelete
-                        ];
-                        $this->userStates[$chatId] = States::AWAITING_DELETE_MEAL_CONFIRM;
-                        $formattedDate = date('d.m.Y', strtotime($dateToDelete));
-                        $confirmMsg = "Удалить запись №{$numberToDelete}?\n{$formattedDate}: {$entryToDelete['name']} {$entryToDelete['grams']}г (Б:{$entryToDelete['p']} Ж:{$entryToDelete['f']} У:{$entryToDelete['c']} К:{$entryToDelete['kcal']})";
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $confirmMsg, 'reply_markup' => $this->keyboardService->makeConfirmYesNo() ]);
-                    }
-                }
-                break;
-
             case States::AWAITING_DELETE_MEAL_CONFIRM:
-                $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
-                if ($text === '✅ Да') {
-                    $dateToDelete = $this->userSelections[$chatId]['diary_delete']['date'] ?? null;
-                    $indexToDelete = $this->userSelections[$chatId]['diary_delete']['index'] ?? null;
-                    $entryName = $this->userSelections[$chatId]['diary_delete']['entry']['name'] ?? '???';
+                $mealEntryIdToDelete = $this->userSelections[$chatId]['diary_entry_id_to_delete'] ?? null;
 
-                    if ($dateToDelete && $indexToDelete !== null && isset($this->diaryData[$chatId][$activeEmail][$dateToDelete][$indexToDelete])) {
-                        unset($this->diaryData[$chatId][$activeEmail][$dateToDelete][$indexToDelete]);
-                        $this->diaryData[$chatId][$activeEmail][$dateToDelete] = array_values($this->diaryData[$chatId][$activeEmail][$dateToDelete]);
-                        if (empty($this->diaryData[$chatId][$activeEmail][$dateToDelete])) { unset($this->diaryData[$chatId][$activeEmail][$dateToDelete]); }
-                        if (empty($this->diaryData[$chatId][$activeEmail])) { unset($this->diaryData[$chatId][$activeEmail]); }
-                        $this->dataStorage->saveAllDiaryData($this->diaryData);
-                        $formattedDate = date('d.m.Y', strtotime($dateToDelete));
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId, 'text' => "Запись '{$entryName}' за {$formattedDate} удалена.", 'reply_markup' => $this->keyboardService->makeDiaryMenu()
-                        ]);
-                    } else {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Не удалось найти запись для удаления.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
-                    }
+                if (!$mealEntryIdToDelete) {
+                    Log::error("DIARY DELETE CONFIRM: diary_entry_id_to_delete не найден для chatId {$chatId}");
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка подтверждения удаления. Попробуйте снова.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
                     $this->userStates[$chatId] = States::DIARY_MENU;
-                    unset($this->userSelections[$chatId]['diary_delete']);
-                } elseif ($text === '❌ Нет') {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Удаление отменено.', 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
-                    $this->userStates[$chatId] = States::DIARY_MENU;
-                    unset($this->userSelections[$chatId]['diary_delete']);
-                } else {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Нажмите "Да" или "Нет".', 'reply_markup' => $this->keyboardService->makeConfirmYesNo() ]);
+                    // Очищаем на всякий случай
+                    unset($this->userSelections[$chatId]['diary_delete_map']);
+                    unset($this->userSelections[$chatId]['diary_entry_id_to_delete']);
+                    break;
                 }
+
+                if ($text === '✅ Да') {
+                    $activeEmail = $this->getActiveAccountEmail($chatId); // Нужен для логов, API использует токен
+                    $nutritionToken = $this->userData[$chatId]['accounts'][$activeEmail]['nutrition_api_token'] ?? null;
+
+                    if (!$activeEmail || !$nutritionToken) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса питания не определен.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                        $this->userStates[$chatId] = States::DIARY_MENU;
+                        unset($this->userSelections[$chatId]['diary_delete_map'], $this->userSelections[$chatId]['diary_entry_id_to_delete']);
+                        break;
+                    }
+
+                    try {
+                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        // Формируем URL с ID удаляемой записи
+                        $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . "/api/v1/eaten-foods/" . $mealEntryIdToDelete;
+
+                        Log::info("DIARY DELETE ENTRY: Requesting", ['url' => $serviceUrl, 'id_to_delete' => $mealEntryIdToDelete, 'email' => $activeEmail]);
+
+                        $response = $client->delete($serviceUrl, [ // Используем метод DELETE
+                            'headers' => [
+                                'Accept' => 'application/json',
+                                'Authorization' => 'Bearer ' . $nutritionToken
+                            ]
+                        ]);
+
+                        $statusCode = $response->getStatusCode();
+                        $responseBody = json_decode($response->getBody()->getContents(), true);
+
+                        Log::info("DIARY DELETE ENTRY: Response", ['status' => $statusCode, 'body' => $responseBody]);
+
+                        if ($statusCode === 200 && isset($responseBody['message']) && $responseBody['message'] === "Food deleted successfully") {
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => 'Запись о приеме пищи успешно удалена с сервера.',
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                        } else {
+                            $errorMessage = $this->extractErrorMessage($responseBody, 'питания (удаление из дневника)');
+                            Log::warning("DIARY DELETE ENTRY: Ошибка удаления из дневника", ['status_code' => $statusCode, 'body' => $responseBody, 'id_deleted' => $mealEntryIdToDelete]);
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Не удалось удалить запись из дневника: {$errorMessage}",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->handleGuzzleError($e, $chatId, "питания (удаление из дневника)");
+                    }
+
+                } elseif ($text === '❌ Нет') {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Удаление отменено.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                } else {
+                    // Если пользователь ввел что-то кроме "Да" или "Нет"
+                    $confirmText = "Вы уверены, что хотите удалить запись о приеме пищи (ID: {$mealEntryIdToDelete})?"; // Простое подтверждение
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => "Пожалуйста, нажмите \"✅ Да\" или \"❌ Нет\".\n\n" . $confirmText,
+                        'reply_markup' => $this->keyboardService->makeConfirmYesNo()
+                    ]);
+                    break; // Остаемся в этом состоянии, выходим из switch
+                }
+                // Сброс состояния и временных данных после Да/Нет
+                $this->userStates[$chatId] = States::DIARY_MENU;
+                unset($this->userSelections[$chatId]['diary_delete_map']); // Очищаем и карту на всякий случай
+                unset($this->userSelections[$chatId]['diary_entry_id_to_delete']);
                 break;
 
             // --- Просмотр рациона ---
             case States::AWAITING_DATE_VIEW_MEAL:
-                $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
                 $dateToView = null;
                 $normalizedText = strtolower(trim($text));
                 if ($normalizedText === 'вчера') { $dateToView = date('Y-m-d', strtotime('-1 day')); }
@@ -1533,30 +1830,106 @@ class BotKernel
                 }
 
                 if (!$dateToView) {
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректный формат даты...', 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректный формат даты...', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
+                    // Остаемся в том же состоянии
                     break;
                 }
 
-                $formattedDate = date('d.m.Y', strtotime($dateToView));
-                if (empty($this->diaryData[$chatId][$activeEmail][$dateToView])) {
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId, 'text' => "Нет записей за {$formattedDate}.", 'reply_markup' => $this->keyboardService->makeDiaryMenu()
-                    ]);
-                } else {
-                    $totalP = 0; $totalF = 0; $totalC = 0; $totalKcal = 0;
-                    $viewMsg = "Рацион за {$formattedDate}:\n\n";
-                    $i = 1;
-                    foreach ($this->diaryData[$chatId][$activeEmail][$dateToView] as $entry) {
-                        $viewMsg .= sprintf("%d. %s (%g г)\n   Б: %g Ж: %g У: %g К: %g\n",
-                            $i++, $entry['name'], $entry['grams'], $entry['p'], $entry['f'], $entry['c'], $entry['kcal']
-                        );
-                        $totalP += $entry['p']; $totalF += $entry['f']; $totalC += $entry['c']; $totalKcal += $entry['kcal'];
-                    }
-                    $viewMsg .= sprintf("\nИтого: Б: %g Ж: %g У: %g К: %g",
-                        round($totalP, 1), round($totalF, 1), round($totalC, 1), round($totalKcal)
-                    );
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $viewMsg, 'reply_markup' => $this->keyboardService->makeDiaryMenu() ]);
+                $activeEmail = $this->getActiveAccountEmail($chatId);
+                $nutritionToken = $this->userData[$chatId]['accounts'][$activeEmail]['nutrition_api_token'] ?? null;
+
+                if (!$activeEmail || !$nutritionToken) {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса питания не определен.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                    $this->userStates[$chatId] = States::DIARY_MENU;
+                    break;
                 }
+
+                try {
+                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                    $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods/show-by-date';
+
+                    $queryParams = [
+                        'date' => $dateToView,
+                        // 'page' => 1, // Для будущей пагинации
+                        // 'per_page' => 10,
+                    ];
+
+                    Log::info("DIARY VIEW RATION: Requesting", ['url' => $serviceUrl, 'params' => $queryParams, 'email' => $activeEmail]);
+
+                    $response = $client->get($serviceUrl, [
+                        'headers' => [
+                            'Accept' => 'application/json',
+                            'Authorization' => 'Bearer ' . $nutritionToken
+                        ],
+                        'query' => $queryParams
+                    ]);
+
+                    $statusCode = $response->getStatusCode();
+                    $responseBody = json_decode($response->getBody()->getContents(), true);
+
+                    Log::info("DIARY VIEW RATION: Response", ['status' => $statusCode, 'body_preview' => substr(json_encode($responseBody), 0, 300)]);
+
+                    if ($statusCode === 200 && isset($responseBody['data']['items'])) {
+                        $eatenItems = $responseBody['data']['items'];
+                        $totals = [
+                            'proteins' => $responseBody['data']['Total proteins'] ?? 0,
+                            'fats' => $responseBody['data']['Total fats'] ?? 0,
+                            'carbs' => $responseBody['data']['Total carbs'] ?? 0,
+                            'kcal' => $responseBody['data']['Total kcal'] ?? 0,
+                        ];
+
+                        if (empty($eatenItems)) {
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "За дату " . date('d.m.Y', strtotime($dateToView)) . " нет записей о приемах пищи.",
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                            ]);
+                        } else {
+                            $rationMsg = "Ваш рацион за " . date('d.m.Y', strtotime($dateToView)) . " (аккаунт: {$activeEmail}):\n\n";
+                            $i = 1;
+                            foreach ($eatenItems as $item) {
+                                $rationMsg .= sprintf(
+                                    "%d. %s (%s г)\n   Б: %s, Ж: %s, У: %s, К: %s\n",
+                                    $i++,
+                                    $item['food_name'] ?? 'Без имени',
+                                    $item['weight'] ?? '0',
+                                    $item['proteins'] ?? '0',
+                                    $item['fats'] ?? '0',
+                                    $item['carbs'] ?? '0',
+                                    $item['kcal'] ?? '0'
+                                );
+                            }
+                            $rationMsg .= "\n--------------------\n";
+                            $rationMsg .= sprintf(
+                                "ИТОГО за день:\nБ: %.2f г, Ж: %.2f г, У: %.2f г, К: %.2f ккал",
+                                (float)$totals['proteins'], (float)$totals['fats'], (float)$totals['carbs'], (float)$totals['kcal']
+                            );
+
+                            // Информация о пагинации, если есть
+                            if (isset($responseBody['meta']) && $responseBody['meta']['current_page'] < $responseBody['meta']['last_page']) {
+                                $rationMsg .= "\n...\nПоказаны записи с первой страницы. Всего записей: " . $responseBody['meta']['total'];
+                            }
+
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => rtrim($rationMsg),
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu(),
+                            ]);
+                        }
+                    } else {
+                        $errorMessage = $this->extractErrorMessage($responseBody, 'питания (просмотр рациона)');
+                        Log::warning("DIARY VIEW RATION: Ошибка получения рациона", ['status_code' => $statusCode, 'body' => $responseBody]);
+                        $this->telegram->sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => "Не удалось загрузить рацион: {$errorMessage}",
+                            'reply_markup' => $this->keyboardService->makeDiaryMenu()
+                        ]);
+                    }
+
+                } catch (\Throwable $e) {
+                    $this->handleGuzzleError($e, $chatId, "питания (просмотр рациона)");
+                }
+                // Сброс состояния после просмотра
                 $this->userStates[$chatId] = States::DIARY_MENU;
                 break;
 
@@ -2087,25 +2460,36 @@ class BotKernel
                  }
                 break;
             case '🗑️ Удалить приём пищи':
-                $activeEmail = $this->getActiveAccountEmail($chatId);
-                if (!$activeEmail) { /* Ошибка */ return; }
-                 if ($currentState === States::DIARY_MENU) {
-                     if (!isset($this->diaryData[$chatId][$activeEmail]) || empty($this->diaryData[$chatId][$activeEmail])) {
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => 'Ваш дневник питания для текущего аккаунта пока пуст. Нечего удалять.',
-                             'reply_markup' => $this->keyboardService->makeDiaryMenu()
-                         ]);
-                     } else {
-                         $this->userStates[$chatId] = States::AWAITING_DATE_DELETE_MEAL; // Запрашиваем дату
-                         unset($this->userSelections[$chatId]['diary_delete']); // Очищаем старые данные
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => 'Введите дату приема пищи для удаления (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
-                             'reply_markup' => $this->keyboardService->makeBackOnly()
-                         ]);
-                     }
-                 }
+                if ($currentState === States::DIARY_MENU || $currentState === States::DEFAULT) { // Проверяем, что мы в меню дневника или главном
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Активный аккаунт не определен.', 'reply_markup' => $this->keyboardService->makeDiaryMenu()]);
+                        break;
+                    }
+                    // Токен здесь пока не нужен, он понадобится на следующем шаге при запросе к API
+
+                    $this->userStates[$chatId] = States::AWAITING_DATE_DELETE_MEAL;
+                    // Очищаем временные данные для удаления, если они были
+                    unset($this->userSelections[$chatId]['diary_delete_map']);
+                    unset($this->userSelections[$chatId]['diary_entry_id_to_delete']);
+                    // Также очистим diary_entry, на всякий случай, чтобы не было конфликтов
+                    unset($this->userSelections[$chatId]['diary_entry']);
+
+
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'За какую дату удалить прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
+                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                    ]);
+                } else {
+                    Log::warning("Кнопка '🗑️ Удалить приём пищи' нажата в неожиданном состоянии: {$currentState} для chatId {$chatId}");
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Действие недоступно из текущего меню.',
+                        'reply_markup' => $this->keyboardService->makeDiaryMenu() // Возвращаем в меню дневника
+                    ]);
+                    $this->userStates[$chatId] = States::DIARY_MENU; // Сбрасываем состояние на всякий случай
+                }
                 break;
             case '🗓️ Посмотреть рацион':
                  if ($currentState === States::DIARY_MENU) {
