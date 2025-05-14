@@ -1,31 +1,41 @@
 {
     "390311595": {
-        "active_account_email": "kondr@kondr.com",
+        "active_account_email": "lkalak@lka.com",
         "accounts": {
-            "new@new.com": {
-                "name": "new",
-                "email": "new@new.com",
-                "password": "$2y$10$Dj9Z8QZobkQIYv9.zLUeCeKW7TcVsq2J82en4rj6XE0D9F8NohNFy"
+            "aa@aqqqa.com": {
+                "name": "вввв",
+                "email": "aa@aqqqa.com",
+                "password": "$2y$10$yXJMuI7b4On1XW5AJ8u8Pesy8\/TmE5SIdmsZvm9WCIS9F.ipGhZ\/C",
+                "nutrition_api_token": "5|zkvt3p6fKOAwpOXURTs43k73HqwZAOehiWTvw8ezd9fb5894",
+                "workout_api_token": "4|ISMBicFgohM8EIcM3QI0F9sEzr1rhRMOQzQRwWTm064388b9"
             },
-            "new2@new.com": {
-                "name": "new2",
-                "email": "new2@new.com",
-                "password": "$2y$10$FTfgj6hDes27qxJeGTmeROuHgS6iAYmjAd59sOeNg5kyrHV6\/kq12"
+            "qqq@aas.com": {
+                "name": "йй",
+                "email": "qqq@aas.com",
+                "password": "$2y$10$kfSoOaQi5xCnxFz34EUIWOb.M3OZW58Ou.WbylcDYxx0x7w6y9qcO",
+                "nutrition_api_token": "6|COeniAZ8eeugfIJY5AjQjF18NVUbgtPuwMKFp1bz08587875",
+                "workout_api_token": "5|T1mulJ0JCFxDZvyb3uPfoip5GKZ7Mn0ty3HHAPok9b28a068"
             },
-            "kondr@kondr.com": {
-                "name": "Алексей",
-                "email": "kondr@kondr.com",
-                "password": "$2y$10$Yx8dD7w7a8F\/MllUt20GBOETLz5zzpmfpuTBDNbDS1O32FP153\/C2"
-            }
-        }
-    },
-    "5255105248": {
-        "active_account_email": "Aa@aa.com",
-        "accounts": {
-            "Aa@aa.com": {
-                "name": "Санек",
-                "email": "Aa@aa.com",
-                "password": "$2y$10$3BGgGq0XzVB1TgCxo2AMzef0IrgUxjY4AcnS92ceRAa7lUO89bX.e"
+            "QQQQQ@kk.com": {
+                "name": "ййййй",
+                "email": "QQQQQ@kk.com",
+                "password": "$2y$10$QbHREiZd0HYsYlu582VPMOGKY5nI\/BIZV.0.ovpyZ7qxJNPkncFsm",
+                "nutrition_api_token": "7|SW0tC0YBkgOuu8XxoBIAaPe4IgrFfPF1qLWJ6U48d5648142",
+                "workout_api_token": "6|dOcHAh1OKchttkPIAfAzzianv6S42lkOPpzS62KJa2d435d7"
+            },
+            "gaga@gaaga.com": {
+                "name": "челик",
+                "email": "gaga@gaaga.com",
+                "password": "$2y$10$5XfqK8iCodQZdNbECLJs6OpJLfcNG62VYI.9gtrRleic5jWaGq\/Fe",
+                "nutrition_api_token": "8|qR7WVxkIqvU3jlGaRwPzKxrAdOSGuA2aKZ6DNQEF2d920d3a",
+                "workout_api_token": "7|UL85NRwttwdWu3e4hkScm0qav7G3iXoJnASI4mVo9e858730"
+            },
+            "lkalak@lka.com": {
+                "name": "ййййй",
+                "email": "lkalak@lka.com",
+                "password": "$2y$10$9FTmSsnw5r1AriuWOIYf7e2VBkVBzeCyUARLQFCglIl8H9yKOn\/OO",
+                "nutrition_api_token": "9|CtVFneRUB8SsAijUOnZtvQZC191VqWUU6v5InHGxdabb704f",
+                "workout_api_token": "8|Rxciu2mZT4avjF2LK1YUSCyuFdik2Q8iJkHVt67Rcc10bbf5"
             }
         }
     }
