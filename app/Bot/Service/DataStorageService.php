@@ -27,10 +27,6 @@ class DataStorageService
         }
 
         $this->userDataFile = $storagePath . '/bot_users.json';
-        $this->userProductsFile = $storagePath . '/bot_products.json';
-        $this->diaryFile = $storagePath . '/bot_diary.json';
-        $this->trainingLogFile = $storagePath . '/bot_trainings.json';
-
         // Загружаем данные при инициализации сервиса
         $this->loadAllData();
     }
@@ -112,9 +108,7 @@ class DataStorageService
     private function loadAllData(): void
     {
         $this->userData = $this->loadJsonData($this->userDataFile, "user data");
-        $this->userProducts = $this->loadJsonData($this->userProductsFile, "user products");
-        $this->diaryData = $this->loadJsonData($this->diaryFile, "diary data");
-        $this->trainingLogData = $this->loadJsonData($this->trainingLogFile, "training logs");
+        
     }
 
     /**

@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 
 class BotKernel
 {
-    
+    //1
     private Api $telegram;
     private int $updateId = 0;
     private KeyboardService $keyboardService;
@@ -46,9 +46,7 @@ class BotKernel
 
         // Загружаем данные из сервиса
         $this->userData = $this->dataStorage->getAllUserData();
-        $this->userProducts = $this->dataStorage->getAllUserProducts();
-        $this->diaryData = $this->dataStorage->getAllDiaryData();
-        $this->trainingLogData = $this->dataStorage->getAllTrainingLogData(); // <-- ДОБАВИТЬ ЗАГРУЗКУ
+        //$this->trainingLogData = $this->dataStorage->getAllTrainingLogData(); // <-- ДОБАВИТЬ ЗАГРУЗКУ
 
         $this->loadExercises();
         echo "BotKernel Initialized via Laravel Container.\n";
@@ -610,6 +608,13 @@ class BotKernel
         $name = $regData['name'];
         $email = $regData['email'];
 
+
+        $this->telegram->sendMessage([
+            'chat_id' => $chatId,
+            'text' => 'Пароль принят. Пожалуйста, подождите, идет регистрация вашего аккаунта в системе... Это может занять несколько секунд.',
+            'reply_markup' => $this->keyboardService->removeKeyboard() // Убираем клавиатуру, чтобы пользователь не нажимал ничего лишнего
+        ]);
+
         // --- Регистрация и получение токена для Nutrition Service ---
         $nutritionApiToken = $this->registerAndLoginNutritionService($chatId, $name, $email, $plainPassword, false); // false - не симулировать
         if (!$nutritionApiToken) {
@@ -659,7 +664,7 @@ class BotKernel
 
     private function registerAndLoginNutritionService(int $chatId, string $name, string $email, string $plainPassword): ?string
     {
-        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 5]);
         $nutritionUserRegistered = false;
 
         // Этап 1: Регистрация
@@ -703,7 +708,7 @@ class BotKernel
 
     private function registerWorkoutService(int $chatId, string $name, string $email, string $plainPassword): ?string
     {
-        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 5]);
 
         try {
             $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . '/api/v1/register';
@@ -1966,22 +1971,15 @@ class BotKernel
                             'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
                     } else {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Неверный номер группы.',
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
-                        ]);
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер группы.', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
                     }
                     break;
                 case States::SELECTING_EXERCISE_TYPE:
                     $group = $this->userSelections[$chatId]['group'] ?? null;
-                    if (!$group || !isset($this->exercises[$group])) { // Добавлена проверка существования группы
-                        $this->userStates[$chatId] = States::DEFAULT;
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Ошибка: Группа упражнений не найдена. Пожалуйста, начните заново.',
-                            'reply_markup' => $this->keyboardService->makeMainMenu()
-                        ]);
+                    if (!$group || !isset($this->exercises[$group])) {
+                        $this->userStates[$chatId] = States::DEFAULT; // или States::LOGGING_TRAINING_MENU
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Группа упражнений не найдена...', 'reply_markup' => $this->keyboardService->makeMainMenu()]); // или makeLoggingTrainingMenu
+                        unset($this->userSelections[$chatId]['group']);
                         break;
                     }
                     $typeKeys = array_keys($this->exercises[$group]);
@@ -1990,80 +1988,190 @@ class BotKernel
                         $this->userSelections[$chatId]['type'] = $selectedType;
                         $this->userStates[$chatId] = States::SELECTING_EXERCISE;
                         $exerciseList = isset($this->exercises[$group][$selectedType]) ? $this->exercises[$group][$selectedType] : [];
+                        // Важно: $exerciseList теперь массив массивов вида [['name' => ..., 'tutorial' => ...], ...]
+                        // если мы загружали из CSV. Если из config/exercises.php - то массив строк.
+                        // generateListMessage должен уметь работать с обоими вариантами, или мы передаем только имена.
+                        $exerciseNames = [];
+                        foreach ($exerciseList as $ex) {
+                            if (is_array($ex) && isset($ex['name'])) {
+                                $exerciseNames[] = $ex['name'];
+                            } elseif (is_string($ex)) {
+                                $exerciseNames[] = $ex; // Для совместимости со старым config/exercises.php
+                            }
+                        }
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => "Тип: {$selectedType}\nВыберите упражнение:\n" . $this->generateListMessage($exerciseList),
+                            'text' => "Тип: {$selectedType}\nВыберите упражнение:\n" . $this->generateListMessage($exerciseNames),
                             'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
                     } else {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Неверный номер типа.',
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
-                        ]);
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер типа.', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
                     }
                     break;
                 case States::SELECTING_EXERCISE:
                     $group = $this->userSelections[$chatId]['group'] ?? null;
                     $type = $this->userSelections[$chatId]['type'] ?? null;
-                    $mode = $this->userSelections[$chatId]['mode'] ?? null;
-                    if (!$group || !$type || !$mode || !isset($this->exercises[$group][$type])) { // Добавлена проверка
-                        $this->userStates[$chatId] = States::DEFAULT;
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Ошибка: Данные выбора упражнения некорректны. Пожалуйста, начните заново.',
-                            'reply_markup' => $this->keyboardService->makeMainMenu()
-                        ]);
+                    $mode = $this->userSelections[$chatId]['mode'] ?? 'log'; // По умолчанию режим логирования
+
+                    if (!$group || !$type || !isset($this->exercises[$group][$type])) {
+                        $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU; // Возврат в меню записи
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Данные выбора упражнения некорректны. Пожалуйста, начните заново.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                        unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode']);
                         break;
                     }
                     $exerciseList = $this->exercises[$group][$type];
+                    $selectedExerciseName = null;
+
+                    // Получаем имя упражнения в зависимости от структуры $exerciseList
                     if (isset($exerciseList[$choiceIndex])) {
-                        $selectedExercise = $exerciseList[$choiceIndex];
+                        $exerciseChoice = $exerciseList[$choiceIndex];
+                        if (is_array($exerciseChoice) && isset($exerciseChoice['name'])) {
+                            $selectedExerciseName = $exerciseChoice['name'];
+                        } elseif (is_string($exerciseChoice)) {
+                            $selectedExerciseName = $exerciseChoice; // Для старого формата из config/exercises.php
+                        }
+                    }
+
+                    if ($selectedExerciseName) {
                         if ($mode === 'log') {
-                            $this->userSelections[$chatId]['exercise'] = $selectedExercise;
+                            $this->userSelections[$chatId]['exercise'] = $selectedExerciseName;
                             $this->userStates[$chatId] = States::AWAITING_REPS;
                             $this->telegram->sendMessage([
                                 'chat_id' => $chatId,
-                                'text' => "Упражнение: {$selectedExercise}\nВведите количество повторений:",
+                                'text' => "Упражнение: {$selectedExerciseName}\nВведите количество повторений:",
                                 'reply_markup' => $this->keyboardService->makeBackOnly()
                             ]);
-                        } elseif ($mode === 'view') {
-                            $this->userStates[$chatId] = States::DEFAULT; // Возвращаемся в главное меню
-                            unset($this->userSelections[$chatId]);
-                            $this->telegram->sendMessage([
-                                'chat_id' => $chatId,
-                                'text' => "Упражнение: {$selectedExercise}\nВаши результаты:\n(Функционал просмотра прогресса пока не реализован)",
-                                'reply_markup' => $this->keyboardService->makeTrainingMenu() // Возврат в меню Тренировки
-                            ]);
-                        }elseif ($mode === 'technique') { // Режим просмотра техники
-                            $this->userStates[$chatId] = States::DEFAULT; // Возвращаемся в главное меню
-                            unset($this->userSelections[$chatId]); // Очищаем выбор
-                            $this->telegram->sendMessage([
-                                'chat_id' => $chatId,
-                                'text' => "Упражнение: {$selectedExercise}\nТехника выполнения:\nВИДЕО", // Выводим заглушку "ВИДЕО"
-                                'reply_markup' => $this->keyboardService->makeTrainingMenu() // Возвращаем меню Тренировок
-                            ]);
-                        
-                        }else {
+                        } elseif ($mode === 'view_progress' || $mode === 'view') { // Добавил 'view' для совместимости, если где-то так устанавливалось
+                            $activeEmail = $this->getActiveAccountEmail($chatId);
+                            $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
+                            // $group уже должен быть в $this->userSelections[$chatId]['group']
+                            // $selectedExerciseName уже определен выше
+
+                            if (!$activeEmail || !$workoutToken || !$group) {
+                                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Недостаточно данных для запроса прогресса (аккаунт, токен или группа мышц).', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                            } else {
+                                try {
+                                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                                    $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/user-exercise-progress";
+                                    $queryParams = [
+                                        'muscle_group' => $group,
+                                        'exercise_name' => $selectedExerciseName
+                                    ];
+
+                                    Log::info("WORKOUT PROGRESS: Запрос прогресса", ['url' => $serviceUrl, 'params' => $queryParams, 'email' => $activeEmail]);
+                                    $response = $client->get($serviceUrl, [
+                                        'headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer ' . $workoutToken],
+                                        'query' => $queryParams
+                                    ]);
+                                    $statusCode = $response->getStatusCode();
+                                    $responseBody = json_decode($response->getBody()->getContents(), true);
+                                    Log::info("WORKOUT PROGRESS: Ответ от сервера", ['status' => $statusCode, 'body' => $responseBody]);
+
+                                    if ($statusCode === 200 && isset($responseBody['data']) && !empty($responseBody['data']) && isset($responseBody['data']['record_weight'])) { // Проверяем наличие ключевого поля
+                                        $progressData = $responseBody['data'];
+                                        $progressMsg = "Прогресс по упражнению '{$selectedExerciseName}' (Группа: {$group}):\n";
+                                        $progressMsg .= "- Рекордный вес: " . ($progressData['record_weight'] ?? 'н/д') . " кг\n";
+                                        $progressMsg .= "- Рекордные повторения: " . ($progressData['record_repeats'] ?? 'н/д') . "\n";
+                                        $progressMsg .= "- Последний вес: " . ($progressData['last_weight'] ?? 'н/д') . " кг\n";
+                                        $progressMsg .= "- Последние повторения: " . ($progressData['last_repeats'] ?? 'н/д') . "\n";
+                                        if (isset($progressData['updated_at'])) {
+                                             try {
+                                                 $date = new \DateTime($progressData['updated_at']);
+                                                 $progressMsg .= "(Обновлено: " . $date->format('d.m.Y H:i') . ")";
+                                             } catch (\Exception $dateEx) { /* Log or ignore date parsing error */ }
+                                        }
+                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $progressMsg]);
+                                    } else {
+                                        $apiMessage = $this->extractErrorMessage($responseBody, "тренировок (прогресс)");
+                                        // Если API вернуло 200, но data пустой или не содержит ожидаемых полей
+                                        $userMessage = (isset($responseBody['data']) && (empty($responseBody['data']) || !isset($responseBody['data']['record_weight'])))
+                                                       ? "Нет данных о прогрессе для упражнения '{$selectedExerciseName}' (группа: {$group})."
+                                                       : "Не удалось получить данные о прогрессе: " . $apiMessage;
+                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $userMessage]);
+                                    }
+                                } catch (\GuzzleHttp\Exception\ClientException $e) {
+                                    if ($e->getResponse() && $e->getResponse()->getStatusCode() == 404) {
+                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Данные о прогрессе для '{$selectedExerciseName}' (группа: {$group}) не найдены на сервере."]);
+                                    } else {
+                                        $this->handleGuzzleError($e, $chatId, "тренировок (прогресс)");
+                                    }
+                                } catch (\Throwable $e) {
+                                    $this->handleGuzzleError($e, $chatId, "тренировок (прогресс)");
+                                }
+                            }
+                            // После показа прогресса (или ошибки) возвращаем в меню записи тренировки
                             $this->userStates[$chatId] = States::DEFAULT;
-                             unset($this->userSelections[$chatId]);
                             $this->telegram->sendMessage([
                                 'chat_id' => $chatId,
-                                'text' => 'Внутренняя ошибка: неизвестный режим выбора упражнения.',
-                                'reply_markup' => $this->keyboardService->makeMainMenu()
+                                'text' => 'Выберите следующее действие:',
+                                'reply_markup' => $this->keyboardService->makeTrainingMenu() // Убедись, что этот метод клавиатуры есть
                             ]);
+                            unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode'], $this->userSelections[$chatId]['exercise']);
+                        } elseif ($mode === 'technique') { // <<<--- ИЗМЕНЕНИЯ ЗДЕСЬ ---<<<
+                            $activeEmail = $this->getActiveAccountEmail($chatId);
+                            $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
+
+                            if (!$activeEmail || !$workoutToken) {
+                                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса тренировок не определен.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                            } else {
+                                try {
+                                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                                    $encodedExerciseName = rawurlencode($selectedExerciseName); // Кодируем имя для URL
+                                    $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/exercise/by-name/{$encodedExerciseName}/guide";
+
+                                    Log::info("WORKOUT TECHNIQUE: Запрос гайда", ['url' => $serviceUrl, 'exercise' => $selectedExerciseName, 'email' => $activeEmail]);
+                                    $response = $client->get($serviceUrl, [
+                                        'headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer ' . $workoutToken]
+                                    ]);
+                                    $statusCode = $response->getStatusCode();
+                                    $responseBody = json_decode($response->getBody()->getContents(), true);
+                                    Log::info("WORKOUT TECHNIQUE: Ответ от сервера", ['status' => $statusCode, 'body' => $responseBody]);
+
+                                    if ($statusCode === 200 && !empty($responseBody['data']['tutorial'])) {
+                                        $tutorialLink = $responseBody['data']['tutorial'];
+                                        $this->telegram->sendMessage([
+                                            'chat_id' => $chatId,
+                                            'text' => "Гайд по упражнению '{$selectedExerciseName}':\n{$tutorialLink}",
+                                            'disable_web_page_preview' => false // Показываем превью ссылки
+                                        ]);
+                                    } else {
+                                        $apiMessage = $this->extractErrorMessage($responseBody, "тренировок (гайд)");
+                                        $userMessage = ($responseBody['data']['tutorial'] === null || $apiMessage === "Неизвестная ошибка от сервиса тренировок (гайд).")
+                                                    ? "Гайд для упражнения '{$selectedExerciseName}' не найден."
+                                                    : "Не удалось получить гайд: " . $apiMessage;
+                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $userMessage]);
+                                    }
+                                } catch (\GuzzleHttp\Exception\ClientException $e) {
+                                    if ($e->getResponse() && $e->getResponse()->getStatusCode() == 404) {
+                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Гайд для упражнения '{$selectedExerciseName}' не найден на сервере."]);
+                                    } else {
+                                        $this->handleGuzzleError($e, $chatId, "тренировок (гайд)");
+                                    }
+                                } catch (\Throwable $e) {
+                                    $this->handleGuzzleError($e, $chatId, "тренировок (гайд)");
+                                }
+                            }
+                            // После показа техники (или ошибки) возвращаем в меню записи тренировки
+                            $this->userStates[$chatId] = States::DEFAULT;
+                            $this->telegram->sendMessage([ // Отправляем клавиатуру отдельно, чтобы сообщение о гайде не перезаписалось
+                                'chat_id' => $chatId,
+                                'text' => 'Выберите следующее действие:',
+                                'reply_markup' => $this->keyboardService->makeTrainingMenu()
+                            ]);
+                            unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode'], $this->userSelections[$chatId]['exercise']);
+
+                        } else { // Неизвестный $mode
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Внутренняя ошибка: неизвестный режим выбора.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                            $this->userStates[$chatId] = States::DEFAULT;
+                            unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode'], $this->userSelections[$chatId]['exercise']);
                         }
-                    } else {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Неверный номер упражнения.',
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
-                        ]);
+                    } else { // Неверный номер упражнения
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер упражнения.', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
                     }
-                    break;
-            }
+                    break; // Конец case States::SELECTING_EXERCISE
+            } // Конец switch ($currentState)
             return;
-        }
+        } // Конец if ($currentState >= States::SELECTING_MUSCLE_GROUP ...
     }
 
     /**
@@ -2325,14 +2433,77 @@ class BotKernel
                      ]);
                  }
                 break;
-            case '📊 Отстающие группы':
-                 if ($currentState === States::DEFAULT /* || $currentState === States::TRAINING_MENU */) {
-                     $this->telegram->sendMessage([
-                         'chat_id' => $chatId,
-                         'text' => "Анализ отстающих групп мышц:\n(у тебя все отстающее, иди качаться дрищ!)",
-                         'reply_markup' => $this->keyboardService->makeTrainingMenu() // Остаемся в меню тренировок
-                     ]);
-                 }
+            case '📊 Отстающие группы': // Убедись, что текст кнопки совпадает
+                // Предполагаем, что это доступно из меню тренировок или главного меню
+                if (in_array($currentState, [States::DEFAULT, States::LOGGING_TRAINING_MENU, /* добавь другие подходящие состояния */])) {
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Активный аккаунт не определен.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                        $this->userStates[$chatId] = States::DEFAULT;
+                        break;
+                    }
+
+                    $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
+                    if (!$workoutToken) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Токен для сервиса тренировок не найден.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                        $this->userStates[$chatId] = States::DEFAULT;
+                        break;
+                    }
+
+                    try {
+                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . '/api/v1/lagging-muscle-groups';
+
+                        Log::info("WORKOUT LAGGING GROUPS: Запрос", ['url' => $serviceUrl, 'email' => $activeEmail]);
+                        $response = $client->get($serviceUrl, [
+                            'headers' => [
+                                'Accept' => 'application/json',
+                                'Authorization' => 'Bearer ' . $workoutToken
+                            ]
+                        ]);
+                        $statusCode = $response->getStatusCode();
+                        $responseBody = json_decode($response->getBody()->getContents(), true);
+                        Log::info("WORKOUT LAGGING GROUPS: Ответ от сервера", ['status' => $statusCode, 'body' => $responseBody]);
+
+                        if ($statusCode === 200 && isset($responseBody['data']['lagging_muscle_groups'])) {
+                            $laggingGroups = $responseBody['data']['lagging_muscle_groups'];
+                            if (empty($laggingGroups)) {
+                                $this->telegram->sendMessage([
+                                    'chat_id' => $chatId,
+                                    'text' => 'Нет данных об отстающих группах мышц, или все группы прорабатываются равномерно!',
+                                    'reply_markup' => $this->keyboardService->makeMainMenu() // или makeLoggingTrainingMenu
+                                ]);
+                            } else {
+                                $messageText = "Отстающие группы мышц (в порядке приоритета):\n";
+                                $i = 1;
+                                foreach ($laggingGroups as $group) {
+                                    $messageText .= "{$i}. {$group}\n";
+                                    $i++;
+                                }
+                                $this->telegram->sendMessage([
+                                    'chat_id' => $chatId,
+                                    'text' => rtrim($messageText),
+                                    'reply_markup' => $this->keyboardService->makeTrainingMenu() // или makeLoggingTrainingMenu
+                                ]);
+                            }
+                        } else {
+                            $errorMessage = $this->extractErrorMessage($responseBody, "тренировок (отстающие группы)");
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => "Не удалось получить данные об отстающих группах: {$errorMessage}",
+                                'reply_markup' => $this->keyboardService->makeTrainingMenu() // или makeLoggingTrainingMenu
+                            ]);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->handleGuzzleError($e, $chatId, "тренировок (отстающие группы)");
+                        // handleGuzzleError уже должен отправлять сообщение и, возможно, сбрасывать состояние
+                    }
+                    // После этого действия обычно возвращаемся в главное меню или меню тренировок
+                    $this->userStates[$chatId] = States::DEFAULT; // или States::LOGGING_TRAINING_MENU
+
+                } else {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Эта функция доступна из меню тренировок.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                }
                 break;
 
             // --- Кнопки меню Записи Тренировки ---
@@ -2348,70 +2519,109 @@ class BotKernel
                     ]);
                  }
                 break;
-            case '✅ Завершить запись':
-                if ($currentState === States::LOGGING_TRAINING_MENU) {
-                    $logCount = isset($this->currentTrainingLog[$chatId]) ? count($this->currentTrainingLog[$chatId]) : 0;
-                    if ($logCount > 0) {
-                        // ---> ДОБАВЛЕНА ЛОГИКА СОХРАНЕНИЯ <---
-                        $activeEmail = $this->getActiveAccountEmail($chatId);
-                        if (!$activeEmail) {
-                                Log::error("Не удалось получить активный email для chatId {$chatId} при сохранении тренировки.");
-                                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка сохранения тренировки: не удалось определить аккаунт.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
-                                // Сбрасываем состояние и лог, но не сохраняем
-                                $this->userStates[$chatId] = States::DEFAULT; unset($this->currentTrainingLog[$chatId]); unset($this->userSelections[$chatId]);
-                                break; // Выходим из case
-                        }
-    
-                        $currentTimestamp = time(); // Получаем текущее время
-                        $currentDate = date('Y-m-d', $currentTimestamp); // Дата из timestamp
-                        $logToSave = $this->currentTrainingLog[$chatId]; // Упражнения из текущей сессии
+            case '✅ Завершить запись': // Убедись, что текст кнопки совпадает
+                // Предполагаем, что завершить можно из любого состояния, где идет запись тренировки.
+                // States::LOGGING_TRAINING_MENU - это, видимо, основное меню, когда тренировка активна.
+                // Также возможно завершение из States::SELECTING_EXERCISE или States::AWAITING_REPS_WEIGHT.
+                // Добавь их, если это так.
+                if (in_array($currentState, [
+                States::LOGGING_TRAINING_MENU,      // Находится в меню "Добавить/Завершить"
+                States::SELECTING_MUSCLE_GROUP,     // В процессе выбора группы мышц
+                States::SELECTING_EXERCISE_TYPE,    // В процессе выбора типа упражнения
+                States::SELECTING_EXERCISE,         // В процессе выбора конкретного упражнения
+                States::AWAITING_REPS,              // В процессе ввода повторений
+                States::AWAITING_WEIGHT])) {
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    if (!$activeEmail) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Активный аккаунт не определен.', 'reply_markup' => $this->keyboardService->makeMainMenu()]); // Возврат в главное меню
+                        $this->userStates[$chatId] = States::DEFAULT; unset($this->currentTrainingLog[$chatId]);
+                        break;
+                    }
 
-                        // Создаем объект тренировки
-                        $trainingSession = [
-                            'date' => $currentDate,
-                            'timestamp' => $currentTimestamp,
-                            'log' => $logToSave
-                        ];
+                    $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
+                    if (!$workoutToken) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Токен для сервиса тренировок не найден. Попробуйте переключить или добавить аккаунт заново.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                        $this->userStates[$chatId] = States::DEFAULT; unset($this->currentTrainingLog[$chatId]);
+                        break;
+                    }
 
-                        // Инициализируем массив для chatId, если его нет
-                        if (!isset($this->trainingLogData[$chatId])) {
-                            $this->trainingLogData[$chatId] = [];
-                        }
-                        // Инициализируем массив для email, если его нет
-                        if (!isset($this->trainingLogData[$chatId][$activeEmail])) {
-                            $this->trainingLogData[$chatId][$activeEmail] = [];
-                        }
+                    $currentLog = $this->currentTrainingLog[$chatId] ?? [];
+                    $logCount = count($currentLog);
 
-                        // Добавляем новую тренировку в КОНЕЦ массива для данного аккаунта
-                        $this->trainingLogData[$chatId][$activeEmail][] = $trainingSession;
-
-                        // Сохраняем все данные логов тренировок
-                        if ($this->dataStorage->saveAllTrainingLogData($this->trainingLogData)) {
-                            Log::info("Тренировка сохранена для chatId {$chatId}, email {$activeEmail}, timestamp {$currentTimestamp}");
-                            $this->telegram->sendMessage([
-                                'chat_id' => $chatId,
-                                'text' => "Тренировка завершена и записана ({$logCount} подходов/упр.). Отличная работа!",
-                                'reply_markup' => $this->keyboardService->makeMainMenu()
-                        ]);
-                        } else {
-                            Log::error("Не удалось сохранить файл логов тренировок.");
-                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка при сохранении тренировки.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
-                        }
-                        // ---> КОНЕЦ ЛОГИКИ СОХРАНЕНИЯ <---
-    
-                    } else { // Если logCount == 0
+                    if (empty($currentLog)) {
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => 'Вы не добавили ни одного упражнения/подхода. Запись отменена.',
-                            'reply_markup' => $this->keyboardService->makeTrainingMenu() // Возврат в меню тренировок
+                            'text' => 'Вы не записали ни одного подхода. Тренировка не сохранена.',
+                            'reply_markup' => $this->keyboardService->makeMainMenu() // Возврат в главное меню
                         ]);
+                        $this->userStates[$chatId] = States::DEFAULT; // Сброс в главное меню
+                        break;
                     }
-                    // Сброс состояния и временных данных в любом случае
+
+                    // Формируем payload для API workout-assistant
+                    $apiExercisesPayload = [];
+                    foreach ($currentLog as $logEntry) {
+                        $apiExercisesPayload[] = [
+                            'exercise_name' => $logEntry['exercise'],
+                            'weight' => (float) $logEntry['weight'],
+                            'reps' => (int) $logEntry['reps']
+                        ];
+                    }
+                    $payload = ['exercises' => $apiExercisesPayload];
+                    $apiCallSuccessful = false;
+
+                    try {
+                        $client = new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 5]);
+                        $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . '/api/v1/workouts';
+
+                        Log::info("WORKOUT SAVE: Отправка данных тренировки на сервер", ['url' => $serviceUrl, 'email' => $activeEmail, 'exercise_count' => count($apiExercisesPayload)]);
+                        // Log::debug("WORKOUT SAVE: Payload", ['payload' => $payload]); // Для детальной отладки
+
+                        $response = $client->post($serviceUrl, [
+                            'json' => $payload,
+                            'headers' => [
+                                'Accept' => 'application/json',
+                                'Authorization' => 'Bearer ' . $workoutToken
+                            ]
+                        ]);
+
+                        $statusCode = $response->getStatusCode();
+                        $responseBody = json_decode($response->getBody()->getContents(), true);
+                        Log::info("WORKOUT SAVE: Ответ от сервера", ['status' => $statusCode, 'body' => $responseBody]);
+
+                        if ($statusCode === 201 && isset($responseBody['data']['message']) && $responseBody['data']['message'] === "Workout saved successfully") {
+                            $ignoredCount = count($responseBody['data']['ignored_exercises'] ?? []);
+                            $successMsg = "Тренировка завершена и записана на сервер ({$logCount} подходов/упр.). Отличная работа!";
+                            if ($ignoredCount > 0) {
+                                $successMsg .= "\n(Предупреждение: {$ignoredCount} упр. не были распознаны/сохранены сервисом)";
+                            }
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $successMsg, 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                            $apiCallSuccessful = true;
+                        } else {
+                            $errorMessage = $this->extractErrorMessage($responseBody, 'тренировок (сохранение)');
+                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Ошибка сохранения тренировки на сервере: {$errorMessage}", 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->handleGuzzleError($e, $chatId, "тренировок (сохранение)");
+                        // Сообщение об ошибке отправлено, возвращаем в главное меню
+                    }
+
+                    // Сброс состояния и временных данных в любом случае после попытки сохранения
                     $this->userStates[$chatId] = States::DEFAULT;
-                    unset($this->currentTrainingLog[$chatId]); // Очищаем временный лог
-                    unset($this->userSelections[$chatId]);
+                    unset($this->userSelections[$chatId]); // Очищаем все selections для чистоты
+
+                    if ($apiCallSuccessful) {
+                        unset($this->currentTrainingLog[$chatId]); // Очищаем лог только при успехе
+                    }
+                    // Локальное сохранение в $this->trainingLogData и bot_trainings.json БОЛЬШЕ НЕ ДЕЛАЕМ
+
+                } else {
+                    // Если кнопка "Завершить запись" нажата в неподходящем состоянии
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Завершение тренировки доступно только во время ее записи или из меню записи тренировки.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                    $this->userStates[$chatId] = States::DEFAULT;
                 }
-                break; // Конец case
+                break;
+ // Конец case
 
             
 
@@ -2859,6 +3069,12 @@ class BotKernel
             $name = $newAccData['name'];
             $email = $newAccData['email'];
 
+            $this->telegram->sendMessage([
+            'chat_id' => $chatId,
+            'text' => 'Пароль принят. Пожалуйста, подождите, идет регистрация вашего аккаунта в системе... Это может занять несколько секунд.',
+            'reply_markup' => $this->keyboardService->removeKeyboard() // Убираем клавиатуру, чтобы пользователь не нажимал ничего лишнего
+            ]);
+
             // --- Регистрация и получение токена для Nutrition Service (реальный вызов) ---
             $nutritionApiToken = $this->registerAndLoginNutritionService($chatId, $name, $email, $plainPassword);
             if (!$nutritionApiToken) {
@@ -2949,7 +3165,7 @@ class BotKernel
             $nutritionToken = $accountToSwitch['nutrition_api_token'] ?? null;
             $workoutToken = $accountToSwitch['workout_api_token'] ?? null;
 
-            $client = new \GuzzleHttp\Client(['timeout' => 7, 'connect_timeout' => 4]); // Таймауты для проверки токена можно сделать короче
+            $client = new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 5]); // Таймауты для проверки токена можно сделать короче
 
             $nutritionTokenValid = false;
             $workoutTokenValid = false;
