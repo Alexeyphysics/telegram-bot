@@ -171,4 +171,42 @@ class KeyboardService
             'one_time_keyboard' => true 
         ]);
     }
+    public function makeDateSelectionInline(): string
+    {
+        $inlineKeyboard = [
+            [
+                Keyboard::inlineButton(['text' => '📅 Сегодня', 'callback_data' => 'date_today']),
+                Keyboard::inlineButton(['text' => '📅 Вчера', 'callback_data' => 'date_yesterday'])
+            ]
+
+        ];
+
+        return json_encode(['inline_keyboard' => $inlineKeyboard]);
+    }
+    public function makeOptionsMenu(array $options, bool $addBackButton = true, int $columns = 1): string
+    {
+        $keyboardLayout = [];
+        $currentRow = [];
+
+        foreach ($options as $option) {
+            $currentRow[] = Keyboard::button(['text' => $option]);
+            if (count($currentRow) >= $columns) {
+                $keyboardLayout[] = $currentRow;
+                $currentRow = [];
+            }
+        }
+        if (!empty($currentRow)) {
+            $keyboardLayout[] = $currentRow;
+        }
+
+        if ($addBackButton) {
+            $keyboardLayout[] = [Keyboard::button(['text' => '⬅️ Назад'])];
+        }
+
+        return json_encode([
+            'keyboard' => $keyboardLayout,
+            'resize_keyboard' => true,
+            'one_time_keyboard' => true 
+        ]);
+    }
 }

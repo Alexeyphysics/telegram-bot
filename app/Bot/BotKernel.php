@@ -40,70 +40,87 @@ class BotKernel
         echo "BotKernel Initialized via Laravel Container.\n";
     }
 
-    public function run(): void
-    {
-        Log::info("Starting Bot Kernel run loop...");
+
+    public function run(): void{
+        Log::info("Запуск Telegram бота..."); 
+        $offset = 0; 
         while (true) {
             try {
-                $updates = $this->telegram->getUpdates(['offset' => $this->updateId + 1, 'timeout' => 30]);
+                $updates = $this->telegram->getUpdates(['offset' => $offset, 'timeout' => 30]);
             } catch (TelegramSDKException $e) {
                 Log::error("Telegram SDK Error: " . $e->getMessage());
-                sleep(5);
+                sleep(5); 
                 continue;
             } catch (\Throwable $e) {
                 Log::error("General Error getting updates: " . $e->getMessage(), ['exception' => $e]);
-                sleep(10);
-                continue;
-            }
-
+                sleep(10); 
+                continue;}
             foreach ($updates as $update) {
-                $this->updateId = $update->getUpdateId();
-
-                if (!$update->isType('message') || $update->getMessage() === null || $update->getMessage()->getChat() === null) {
-                    continue;
-                }
-
-                $message = $update->getMessage();
-                $chatId = $message->getChat()->getId();
-                $text = $message->getText() ?? '';
-                if (!isset($this->userStates[$chatId])) {
-                    $this->userStates[$chatId] = States::DEFAULT;
-                }
-                if (!isset($this->userSelections[$chatId])) {
-                    $this->userSelections[$chatId] = [];
-                }
-                if (!isset($this->diaryData[$chatId])) {
-                    $this->diaryData[$chatId] = [];
-                }
-                if (!isset($this->userProducts[$chatId])) {
-                    $this->userProducts[$chatId] = [];
-                }
-                if (!isset($this->trainingLogData[$chatId])) {
-                    $this->trainingLogData[$chatId] = [];
-                }
-
-                echo "Получено сообщение: $text (Chat ID: $chatId), State: " . ($this->userStates[$chatId] ?? States::DEFAULT) . "\n";
-
+                $offset = $update->getUpdateId() + 1; 
+                $chatId = null; 
                 try {
-                    $this->handleMessage($chatId, $text, $message);
+                    if ($update->getCallbackQuery()) {
+                        $callbackQuery = $update->getCallbackQuery();
+                        $chatId = $callbackQuery->getMessage()->getChat()->getId(); 
+                        $callbackData = $callbackQuery->getData();
+                        $messageId = $callbackQuery->getMessage()->getMessageId();
+                        $this->initializeUserDataForChat($chatId);
+                        try {
+                            $this->telegram->answerCallbackQuery(['callback_query_id' => $callbackQuery->getId()]);
+                        } catch (\Throwable $e) {
+                            Log::warning("Не удалось ответить на CallbackQuery: " . $e->getMessage(), ['query_id' => $callbackQuery->getId()]);
+                        }
+                        echo "Получен CallbackQuery: {$callbackData} (Chat ID: {$chatId}), State: " . ($this->userStates[$chatId] ?? States::DEFAULT) . "\n";
+                        $this->handleCallbackQuery($chatId, $callbackData, $messageId, $callbackQuery->getMessage());
+                    } elseif ($update->getMessage()) {
+                        $message = $update->getMessage();
+                        if ($message->getChat() === null) { 
+                            Log::warning("Сообщение без информации о чате получено.", ['update_id' => $update->getUpdateId()]);
+                            continue;
+                        }
+                        $chatId = $message->getChat()->getId();
+                        $text = $message->getText() ?? '';
+                        $this->initializeUserDataForChat($chatId);
+                        echo "Получено сообщение: \"{$text}\" (Chat ID: {$chatId}), State: " . ($this->userStates[$chatId] ?? States::DEFAULT) . "\n";
+                        $this->handleMessage($chatId, $text, $message);
+                    } else {
+                    }
                 } catch (\Throwable $e) {
-                    Log::error("Error processing message for chat ID {$chatId}: " . $e->getMessage(), [
+                    Log::error("Error processing update for chat ID {$chatId}: " . $e->getMessage(), [
                         'exception' => $e,
+                        'update_id' => $update->getUpdateId(),
                         'chat_id' => $chatId,
-                        'text' => $text,
                     ]);
-                    try {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла внутренняя ошибка. Попробуйте позже.']);
-                        $this->userStates[$chatId] = States::DEFAULT; unset($this->userSelections[$chatId]);
-                    } catch (\Throwable $ex) {
-                        Log::error("Could not send error message to user {$chatId}.", ['exception' => $ex]);
+                    if ($chatId) {
+                        try {
+                            $this->telegram->sendMessage([
+                                'chat_id' => $chatId,
+                                'text' => 'Произошла внутренняя ошибка. Пожалуйста, попробуйте позже.',
+                                'reply_markup' => $this->keyboardService->makeMainMenu() 
+                            ]);
+                            $this->userStates[$chatId] = States::DEFAULT;
+                            unset($this->userSelections[$chatId]);
+                        } catch (\Throwable $ex) {
+                            Log::error("Could not send error message to user {$chatId}.", ['exception' => $ex]);
+                        }
                     }
                 }
+            } 
+            if (empty($updates)) {
+                sleep(1);
             }
-            sleep(1);
-        }
+        } 
     }
 
+    private function initializeUserDataForChat(int $chatId): void
+    {
+        if (!isset($this->userStates[$chatId])) {
+            $this->userStates[$chatId] = States::DEFAULT;
+        }
+        if (!isset($this->userSelections[$chatId])) {
+            $this->userSelections[$chatId] = [];
+        }
+    }
   
 
     private function handleMessage(int $chatId, string $text, Message $message): void
@@ -149,7 +166,7 @@ class BotKernel
             $this->handleBjuStates($chatId, $text, $message, $currentState);
             return; 
         }
-        if (($currentState === States::AWAITING_DATE_MANUAL_ADD || $currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_ADD_MEAL_CONFIRM_MANUAL && $currentState != States::DIARY_MENU) || // Добавление
+        if (($currentState === States::AWAITING_DATE_MANUAL_ADD || $currentState >= States::AWAITING_ADD_MEAL_OPTION && $currentState <= States::AWAITING_ADD_MEAL_CONFIRM_MANUAL && $currentState != States::DIARY_MENU) || 
             $currentState === States::AWAITING_DATE_DELETE_MEAL ||
             $currentState === States::AWAITING_DATE_SEARCH_ADD ||      
             $currentState === States::AWAITING_MEAL_NUMBER_DELETE ||   
@@ -199,60 +216,112 @@ class BotKernel
 
     private function handleBackDuringInput(int $chatId, Message $message, int $currentState): bool
     {
-        $currentMode = $this->userSelections[$chatId]['mode'] ?? null;
-        if ($currentState >= States::SELECTING_MUSCLE_GROUP && $currentState <= States::AWAITING_WEIGHT) {
-            $returnState = ($currentMode === 'log') ? States::LOGGING_TRAINING_MENU : States::DEFAULT;
-            $returnKeyboard = ($currentMode === 'log') ? $this->keyboardService->makeAddExerciseMenu() : $this->keyboardService->makeTrainingMenu();
-            $cancelMessage = ($currentMode === 'log') ? 'Добавление упражнения отменено.' : 'Просмотр прогресса отменен.';
-            
-            $returnState = match ($currentMode) {
-                'log' => States::LOGGING_TRAINING_MENU,
-                'view', 'technique' => States::DEFAULT, 
-                default => States::DEFAULT,
-           };
-           $returnKeyboard = match ($currentMode) {
-                'log' => $this->keyboardService->makeAddExerciseMenu(),
-                'view', 'technique' => $this->keyboardService->makeTrainingMenu(), 
-                default => $this->keyboardService->makeTrainingMenu(),
-           };
-           $cancelMessage = match ($currentMode) {
-               'log' => 'Добавление упражнения отменено.',
-               'view' => 'Просмотр прогресса отменен.',
-               'technique' => 'Просмотр техники отменен.', 
-               default => 'Действие отменено.'
-           };
-            switch ($currentState) {
-                case States::SELECTING_MUSCLE_GROUP:
-                    $this->userStates[$chatId] = $returnState; unset($this->userSelections[$chatId]);
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $cancelMessage, 'reply_markup' => $returnKeyboard ]);
-                    break;
-                case States::SELECTING_EXERCISE_TYPE:
-                    $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; unset($this->userSelections[$chatId]['group']);
-                    $groupKeys = array_keys($this->exercises);
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Выберите группу:\n" . $this->generateListMessage($groupKeys), 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
-                    break;
-                case States::SELECTING_EXERCISE:
-                    $this->userStates[$chatId] = States::SELECTING_EXERCISE_TYPE; $group = $this->userSelections[$chatId]['group'] ?? '???'; unset($this->userSelections[$chatId]['type']);
-                    $typeKeys = isset($this->exercises[$group]) ? array_keys($this->exercises[$group]) : [];
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Группа: {$group}\nВыберите тип:\n" . $this->generateListMessage($typeKeys), 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
-                    break;
-                case States::AWAITING_REPS:
-                    $this->userStates[$chatId] = States::SELECTING_EXERCISE; $group = $this->userSelections[$chatId]['group'] ?? '???'; $type = $this->userSelections[$chatId]['type'] ?? '???'; unset($this->userSelections[$chatId]['exercise']);
-                    $exerciseList = isset($this->exercises[$group][$type]) ? $this->exercises[$group][$type] : [];
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Тип: {$type}\nВыберите упр.:\n" . $this->generateListMessage($exerciseList), 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
-                    break;
-                case States::AWAITING_WEIGHT:
-                    $this->userStates[$chatId] = States::AWAITING_REPS; unset($this->userSelections[$chatId]['reps']); $exercise = $this->userSelections[$chatId]['exercise'] ?? '???';
-                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Упражнение: {$exercise}\nПовторения:", 'reply_markup' => $this->keyboardService->makeBackOnly() ]);
-                    break;
+        $currentTrainingMode = $this->userSelections[$chatId]['training_mode'] ?? 'log'; 
+
+
+        if ($currentState === States::SELECTING_EXERCISE_TYPE) { 
+            $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; 
+            unset($this->userSelections[$chatId]['group']);
+
+            $groupKeys = array_keys($this->exercises);
+            $this->telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => 'Вы вернулись назад. Выберите группу мышц:',
+                'reply_markup' => $this->keyboardService->makeOptionsMenu($groupKeys, true, 2) 
+            ]);
+            return true;
+        } elseif ($currentState === States::SELECTING_EXERCISE) { 
+            $this->userStates[$chatId] = States::SELECTING_EXERCISE_TYPE; 
+            $group = $this->userSelections[$chatId]['group'] ?? null;
+            unset($this->userSelections[$chatId]['type']); 
+
+            if ($group && isset($this->exercises[$group])) {
+                $typeKeys = array_keys($this->exercises[$group]);
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "Вы вернулись назад. Группа: {$group}\nВыберите тип:",
+                    'reply_markup' => $this->keyboardService->makeOptionsMenu($typeKeys, true, 2) 
+                ]);
+            } else { 
+                $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP;
+                unset($this->userSelections[$chatId]['group']);
+                $groupKeys = array_keys($this->exercises);
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Произошла ошибка. Выберите группу мышц:',
+                    'reply_markup' => $this->keyboardService->makeOptionsMenu($groupKeys, true, 2)
+                ]);
             }
-            return true; 
-        }
+            return true;
+        } elseif ($currentState === States::AWAITING_REPS) { 
+            $this->userStates[$chatId] = States::SELECTING_EXERCISE; 
+            $group = $this->userSelections[$chatId]['group'] ?? null;
+            $type = $this->userSelections[$chatId]['type'] ?? null;
+            unset($this->userSelections[$chatId]['exercise']); 
+
+            if ($group && $type && isset($this->exercises[$group][$type])) {
+                $exerciseListObjects = $this->exercises[$group][$type];
+                $exerciseNames = [];
+                foreach ($exerciseListObjects as $ex) { $exerciseNames[] = is_array($ex) && isset($ex['name']) ? $ex['name'] : (is_string($ex) ? $ex : 'Неизв. упр.'); }
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "Вы вернулись назад. Тип: {$type}\nВыберите упражнение:",
+                    'reply_markup' => $this->keyboardService->makeOptionsMenu($exerciseNames, true, 1) 
+                ]);
+            } else { 
+                $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP;
+                unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type']);
+                $groupKeys = array_keys($this->exercises);
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Произошла ошибка. Выберите группу мышц:',
+                    'reply_markup' => $this->keyboardService->makeOptionsMenu($groupKeys, true, 2)
+                ]);
+            }
+            return true;
+            } elseif ($currentState === States::AWAITING_WEIGHT) { 
+                $this->userStates[$chatId] = States::AWAITING_REPS; 
+                $exercise = $this->userSelections[$chatId]['exercise'] ?? 'Упражнение';
+                unset($this->userSelections[$chatId]['reps']); 
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "Вы вернулись назад. Упражнение: {$exercise}\nВведите количество повторений:",
+                    'reply_markup' => $this->keyboardService->makeBackOnly() 
+                ]);
+                return true;
+            } elseif ($currentState === States::SELECTING_MUSCLE_GROUP) { 
+                $returnState = match ($currentTrainingMode) {
+                    'log' => States::LOGGING_TRAINING_MENU,
+                    'technique' => States::LOGGING_TRAINING_MENU, 
+                    'view_progress' => States::LOGGING_TRAINING_MENU, 
+                    default => States::DEFAULT,
+                };
+                $returnKeyboard = match ($currentTrainingMode) {
+                    'log', 'technique', 'view_progress' => $this->keyboardService->makeTrainingMenu(), 
+                    default => $this->keyboardService->makeMainMenu(),
+                };
+                $cancelMessage = match ($currentTrainingMode) {
+                    'log' => 'Добавление упражнения отменено. Возврат в меню записи.',
+                    'technique' => 'Просмотр техники отменен. Возврат в меню записи.',
+                    'view_progress' => 'Просмотр прогресса отменен. Возврат в меню записи.',
+                    default => 'Действие отменено.'
+                };
+                $this->userStates[$chatId] = $returnState;
+                unset(
+                    $this->userSelections[$chatId]['group'],
+                    $this->userSelections[$chatId]['type'],
+                    $this->userSelections[$chatId]['exercise'],
+                    $this->userSelections[$chatId]['training_mode']
+                );
+                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $cancelMessage, 'reply_markup' => $returnKeyboard]);
+                return true;
+            }
+
+        
         if (($currentState >= States::AWAITING_PRODUCT_NAME_SAVE && $currentState <= States::AWAITING_SAVE_CONFIRMATION) ||
             $currentState === States::AWAITING_PRODUCT_NUMBER_DELETE || 
             $currentState === States::AWAITING_DELETE_CONFIRMATION ||
-            $currentState === States::AWAITING_PRODUCT_NAME_SEARCH)
-        {
+            $currentState === States::AWAITING_PRODUCT_NAME_SEARCH){
             $this->userStates[$chatId] = States::BJU_MENU;
             unset($this->userSelections[$chatId]['bju_product']);
             unset($this->userSelections[$chatId]['bju_product_to_delete']);
@@ -267,8 +336,7 @@ class BotKernel
             $currentState === States::AWAITING_DATE_SEARCH_ADD ||
             $currentState === States::AWAITING_MEAL_NUMBER_DELETE ||
             $currentState === States::AWAITING_DELETE_MEAL_CONFIRM ||
-            $currentState === States::AWAITING_DATE_VIEW_MEAL
-        ) {
+            $currentState === States::AWAITING_DATE_VIEW_MEAL) {
             $previousState = States::DEFAULT; 
             $previousKeyboard = $this->keyboardService->makeMainMenu(); 
             $messageText = 'Действие отменено.'; 
@@ -288,12 +356,12 @@ class BotKernel
                 unset($this->userSelections[$chatId]['diary_entry']); 
             } elseif ($currentState === States::AWAITING_SEARCH_PRODUCT_NAME_ADD) {
                 $previousState = States::AWAITING_DATE_SEARCH_ADD; 
-                $previousKeyboard = $this->keyboardService->makeBackOnly();
+                $previousKeyboard = $this->keyboardService->makeDateSelectionInline();
                 $messageText = 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":';
                 unset($this->userSelections[$chatId]['diary_entry']['date']); 
             } elseif ($currentState === States::AWAITING_GRAMS_MANUAL_ADD) { 
                 $previousState = States::AWAITING_DATE_MANUAL_ADD;
-                $previousKeyboard = $this->keyboardService->makeBackOnly();
+                $previousKeyboard = $this->keyboardService->makeDateSelectionInline();
                 $messageText = 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":';
                 unset($this->userSelections[$chatId]['diary_entry']['date']); 
             } elseif ($currentState === States::AWAITING_GRAMS_SEARCH_ADD) {
@@ -648,7 +716,6 @@ class BotKernel
                         } else {
                             $this->userSelections[$chatId]['bju_product']['carbs'] = (float)$text;
             
-                            // ---> ДОБАВЛЕНО: Расчет калорий <---
                             $p = $this->userSelections[$chatId]['bju_product']['protein'] ?? 0;
                             $f = $this->userSelections[$chatId]['bju_product']['fat'] ?? 0;
                             $c = (float)$text;
@@ -754,7 +821,7 @@ class BotKernel
                     }
                     $selectedNumber = (int)$text;
                     $productIdToDelete = $productMap[$selectedNumber];
-                    $productNameToConfirm = "Продукт с ID: {$productIdToDelete}"; // Запасное имя
+                    $productNameToConfirm = "Продукт с ID: {$productIdToDelete}";
                     $this->userSelections[$chatId]['product_id_to_delete'] = $productIdToDelete;
                     $this->userStates[$chatId] = States::AWAITING_DELETE_CONFIRMATION;
                     $this->telegram->sendMessage([
@@ -827,7 +894,6 @@ class BotKernel
                 $searchTermLower = trim(mb_strtolower($text));
                 if (empty($searchTermLower)) {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Пожалуйста, введите название продукта для поиска.', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
-                    // Остаемся в том же состоянии
                     break;
                 }
                 try {
@@ -910,7 +976,7 @@ class BotKernel
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
                         'text' => 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                        'reply_markup' => $this->keyboardService->makeDateSelectionInline()
                     ]);
                 } elseif ($text === '✍️ Записать БЖУ вручную') {
                     $this->userStates[$chatId] = States::AWAITING_DATE_MANUAL_ADD;
@@ -918,7 +984,7 @@ class BotKernel
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
                         'text' => 'На какую дату записать прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                        'reply_markup' => $this->keyboardService->makeDateSelectionInline()
                     ]);
                 } else {
                     $this->telegram->sendMessage([
@@ -935,6 +1001,9 @@ class BotKernel
                 elseif ($normalizedText === 'сегодня') { $dateToLog = date('Y-m-d'); }
                 elseif (preg_match('/^(\d{2})\.(\d{2})\.(\d{4})$/', $text, $matches)) {
                     if (checkdate($matches[2], $matches[1], $matches[3])) { $dateToLog = "{$matches[3]}-{$matches[2]}-{$matches[1]}"; }
+                       
+                }elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $text, $matches)) { 
+                if (checkdate($matches[2], $matches[3], $matches[1])) { $dateToLog = $text; }
                 }
                 if (!$dateToLog) {
                     $this->telegram->sendMessage([
@@ -963,6 +1032,8 @@ class BotKernel
                     if (checkdate($matches[2], $matches[1], $matches[3])) {
                         $dateToLog = "{$matches[3]}-{$matches[2]}-{$matches[1]}";
                     }
+                }elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $text, $matches)) {
+                if (checkdate($matches[2], $matches[3], $matches[1])) { $dateToLog = $text; }
                 }
                 if (!$dateToLog) {
                         $this->telegram->sendMessage([
@@ -1052,9 +1123,9 @@ class BotKernel
                             $this->telegram->sendMessage([
                                 'chat_id' => $chatId,
                                 'text' => "Продукт '{$text}' не найден в вашей базе сохраненных продуктов. Попробуйте другое название или добавьте его сначала в 'БЖУ продуктов'.",
-                                'reply_markup' => $this->keyboardService->makeDiaryMenu() // Возвращаем в меню дневника
+                                'reply_markup' => $this->keyboardService->makeDiaryMenu() 
                             ]);
-                            $this->userStates[$chatId] = States::DIARY_MENU; // Сброс состояния
+                            $this->userStates[$chatId] = States::DIARY_MENU; 
                             unset($this->userSelections[$chatId]['diary_entry']);
                         }
                     } else {
@@ -1350,6 +1421,9 @@ class BotKernel
                 elseif (preg_match('/^(\d{2})\.(\d{2})\.(\d{4})$/', $text, $matches)) {
                     if (checkdate($matches[2], $matches[1], $matches[3])) { $dateToDelete = "{$matches[3]}-{$matches[2]}-{$matches[1]}"; }
                 }
+                elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $text, $matches)) { 
+                if (checkdate($matches[2], $matches[3], $matches[1])) { $dateToLog = $text; }
+                }
                 if (!$dateToDelete) {
                     $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Некорректный формат даты...', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
                     break;
@@ -1513,6 +1587,8 @@ class BotKernel
                 elseif ($normalizedText === 'сегодня') { $dateToView = date('Y-m-d'); }
                 elseif (preg_match('/^(\d{2})\.(\d{2})\.(\d{4})$/', $text, $matches)) {
                     if (checkdate($matches[2], $matches[1], $matches[3])) { $dateToView = "{$matches[3]}-{$matches[2]}-{$matches[1]}"; }
+                }elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $text, $matches)) { 
+                if (checkdate($matches[2], $matches[3], $matches[1])) { $dateToLog = $text; }
                 }
 
                 if (!$dateToView) {
@@ -1609,218 +1685,133 @@ class BotKernel
                 break;
         } 
     }
+
+
     private function handleExerciseSelectionState(int $chatId, string $text, Message $message, int $currentState): void
     {
-        if ($currentState >= States::SELECTING_MUSCLE_GROUP && $currentState <= States::SELECTING_EXERCISE) {
-            if (!ctype_digit($text)) {
-                $this->telegram->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => 'Пожалуйста, введите номер из списка или нажмите "Назад".',
-                    'reply_markup' => $this->keyboardService->makeBackOnly()
-                ]);
-                return;
-            }
-            $choiceIndex = (int)$text - 1;
-            switch ($currentState) {
-                case States::SELECTING_MUSCLE_GROUP:
-                    $groupKeys = array_keys($this->exercises);
-                    if (isset($groupKeys[$choiceIndex])) {
-                        $selectedGroup = $groupKeys[$choiceIndex];
-                        $this->userSelections[$chatId]['group'] = $selectedGroup;
-                        $this->userStates[$chatId] = States::SELECTING_EXERCISE_TYPE;
-                        $typeKeys = isset($this->exercises[$selectedGroup]) ? array_keys($this->exercises[$selectedGroup]) : [];
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => "Группа: {$selectedGroup}\nВыберите тип:\n" . $this->generateListMessage($typeKeys),
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
-                        ]);
-                    } else {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер группы.', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
+        $group = $this->userSelections[$chatId]['group'] ?? null;
+        $type = $this->userSelections[$chatId]['type'] ?? null;
+        $mode = $this->userSelections[$chatId]['training_mode'] ?? 'log'; 
+
+        switch ($currentState) {
+            case States::SELECTING_MUSCLE_GROUP:
+                $groupKeys = array_keys($this->exercises);
+                if (in_array($text, $groupKeys)) {
+                    $selectedGroup = $text;
+                    $this->userSelections[$chatId]['group'] = $selectedGroup; 
+                    $this->userStates[$chatId] = States::SELECTING_EXERCISE_TYPE;
+                    $typeKeys = isset($this->exercises[$selectedGroup]) ? array_keys($this->exercises[$selectedGroup]) : [];
+                    if (empty($typeKeys)) {
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Для группы '{$selectedGroup}' не найдено типов упражнений. Возврат.", 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                        $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU; unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['training_mode']); break;
                     }
-                    break;
-                case States::SELECTING_EXERCISE_TYPE:
-                    $group = $this->userSelections[$chatId]['group'] ?? null;
-                    if (!$group || !isset($this->exercises[$group])) {
-                        $this->userStates[$chatId] = States::DEFAULT; 
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Группа упражнений не найдена...', 'reply_markup' => $this->keyboardService->makeMainMenu()]); // или makeLoggingTrainingMenu
-                        unset($this->userSelections[$chatId]['group']);
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Группа: {$selectedGroup}\nВыберите тип:", 'reply_markup' => $this->keyboardService->makeOptionsMenu($typeKeys, true, 2)]);
+                } else {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Пожалуйста, выберите группу мышц с помощью кнопок.', 'reply_markup' => $this->keyboardService->makeOptionsMenu($groupKeys, true, 2)]);
+                }
+                break;
+
+            case States::SELECTING_EXERCISE_TYPE:
+                if (!$group || !isset($this->exercises[$group])) { /* ... обработка ошибки отсутствия группы ... */ break; }
+                $typeKeys = array_keys($this->exercises[$group]);
+                if (in_array($text, $typeKeys)) {
+                    $selectedType = $text;
+                    $this->userSelections[$chatId]['type'] = $selectedType; 
+                    $this->userStates[$chatId] = States::SELECTING_EXERCISE;
+                    $exerciseListObjects = isset($this->exercises[$group][$selectedType]) ? $this->exercises[$group][$selectedType] : [];
+                    $exerciseNames = [];
+                    foreach ($exerciseListObjects as $ex) { $exerciseNames[] = is_array($ex) && isset($ex['name']) ? $ex['name'] : (is_string($ex) ? $ex : 'Неизв. упр.'); }
+                    if (empty($exerciseNames)) { /* ... обработка ошибки нет упражнений ... */ break; }
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Тип: {$selectedType}\nВыберите упражнение:", 'reply_markup' => $this->keyboardService->makeOptionsMenu($exerciseNames, true, 1)]);
+                } else {
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Пожалуйста, выберите тип упражнения с помощью кнопок.', 'reply_markup' => $this->keyboardService->makeOptionsMenu($typeKeys, true, 2)]);
+                }
+                break;
+
+            case States::SELECTING_EXERCISE:
+                if (!$group || !$type || !isset($this->exercises[$group][$type])) { /* ... обработка ошибки некорректных данных ... */ break; }
+
+                $exerciseListObjects = $this->exercises[$group][$type];
+                $selectedExerciseName = null;
+                foreach ($exerciseListObjects as $ex) {
+                    $currentExName = is_array($ex) && isset($ex['name']) ? $ex['name'] : (is_string($ex) ? $ex : null);
+                    if ($currentExName && $text === $currentExName) {
+                        $selectedExerciseName = $currentExName;
                         break;
                     }
-                    $typeKeys = array_keys($this->exercises[$group]);
-                    if (isset($typeKeys[$choiceIndex])) {
-                        $selectedType = $typeKeys[$choiceIndex];
-                        $this->userSelections[$chatId]['type'] = $selectedType;
-                        $this->userStates[$chatId] = States::SELECTING_EXERCISE;
-                        $exerciseList = isset($this->exercises[$group][$selectedType]) ? $this->exercises[$group][$selectedType] : [];
-                        $exerciseNames = [];
-                        foreach ($exerciseList as $ex) {
-                            if (is_array($ex) && isset($ex['name'])) {
-                                $exerciseNames[] = $ex['name'];
-                            } elseif (is_string($ex)) {
-                                $exerciseNames[] = $ex;
-                            }
-                        }
+                }
+
+                if ($selectedExerciseName) {
+                    if ($mode === 'log') { 
+                        $this->userSelections[$chatId]['exercise'] = $selectedExerciseName;
+                        $this->userStates[$chatId] = States::AWAITING_REPS;
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
-                            'text' => "Тип: {$selectedType}\nВыберите упражнение:\n" . $this->generateListMessage($exerciseNames),
+                            'text' => "Упражнение: {$selectedExerciseName}\nВведите количество повторений:",
                             'reply_markup' => $this->keyboardService->makeBackOnly()
                         ]);
-                    } else {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер типа.', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
-                    }
-                    break;
-                case States::SELECTING_EXERCISE:
-                    $group = $this->userSelections[$chatId]['group'] ?? null;
-                    $type = $this->userSelections[$chatId]['type'] ?? null;
-                    $mode = $this->userSelections[$chatId]['mode'] ?? 'log';
-
-                    if (!$group || !$type || !isset($this->exercises[$group][$type])) {
+                    } elseif ($mode === 'technique') { 
+                        $activeEmail = $this->getActiveAccountEmail($chatId);
+                        $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
+                        if (!$activeEmail || !$workoutToken) { /* ... ошибка нет аккаунта/токена ... */ }
+                        else {
+                            try {
+                                $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                                $encodedExerciseName = rawurlencode($selectedExerciseName);
+                                $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/exercise/by-name/{$encodedExerciseName}/guide";
+                                Log::info("WORKOUT TECHNIQUE: Запрос гайда", ['url' => $serviceUrl, 'exercise' => $selectedExerciseName]);
+                                $response = $client->get($serviceUrl, ['headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer ' . $workoutToken]]);
+                                $statusCode = $response->getStatusCode(); $responseBody = json_decode($response->getBody()->getContents(), true);
+                                Log::info("WORKOUT TECHNIQUE: Ответ", ['status' => $statusCode, 'body' => $responseBody]);
+                                if ($statusCode === 200 && !empty($responseBody['data']['tutorial'])) {
+                                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Гайд по '{$selectedExerciseName}':\n{$responseBody['data']['tutorial']}", 'disable_web_page_preview' => false]);
+                                } else { /* ... сообщение "гайд не найден" или ошибка API ... */ }
+                            } catch (\GuzzleHttp\Exception\ClientException $e) { if ($e->getResponse() && $e->getResponse()->getStatusCode() == 404) { $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Гайд для '{$selectedExerciseName}' не найден."]); } else { $this->handleGuzzleError($e, $chatId, "тренировок (гайд)"); }}
+                            catch (\Throwable $e) { $this->handleGuzzleError($e, $chatId, "тренировок (гайд)"); }
+                        }
                         $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU;
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Данные выбора упражнения некорректны. Пожалуйста, начните заново.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
-                        unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode']);
-                        break;
-                    }
-                    $exerciseList = $this->exercises[$group][$type];
-                    $selectedExerciseName = null;
-                    if (isset($exerciseList[$choiceIndex])) {
-                        $exerciseChoice = $exerciseList[$choiceIndex];
-                        if (is_array($exerciseChoice) && isset($exerciseChoice['name'])) {
-                            $selectedExerciseName = $exerciseChoice['name'];
-                        } elseif (is_string($exerciseChoice)) {
-                            $selectedExerciseName = $exerciseChoice;
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Выберите следующее действие:', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                        unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['training_mode']);
+
+                    } elseif ($mode === 'view_progress') { 
+                        $activeEmail = $this->getActiveAccountEmail($chatId);
+                        $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
+                        if (!$activeEmail || !$workoutToken || !$group) { /* ... ошибка нет данных ... */ }
+                        else {
+                            try {
+                                $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                                $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/user-exercise-progress";
+                                $queryParams = ['muscle_group' => $group, 'exercise_name' => $selectedExerciseName];
+                                Log::info("WORKOUT PROGRESS: Запрос", ['url' => $serviceUrl, 'params' => $queryParams]);
+                                $response = $client->get($serviceUrl, ['headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer ' . $workoutToken], 'query' => $queryParams]);
+                                $statusCode = $response->getStatusCode(); $responseBody = json_decode($response->getBody()->getContents(), true);
+                                Log::info("WORKOUT PROGRESS: Ответ", ['status' => $statusCode, 'body' => $responseBody]);
+                                if ($statusCode === 200 && isset($responseBody['data']) && !empty($responseBody['data']['record_weight'])) {
+                                    $progressData = $responseBody['data'];
+                                    $progressMsg = "Прогресс по '{$selectedExerciseName}' (Группа: {$group}):\n";
+                                    $progressMsg .= "- Рекорд: {$progressData['record_weight']}кг x {$progressData['record_repeats']}\n";
+                                    $progressMsg .= "- Последний: {$progressData['last_weight']}кг x {$progressData['last_repeats']}\n";
+                                    if (isset($progressData['updated_at'])) { try { $utcDate = new \DateTime($progressData['updated_at'], new \DateTimeZone('UTC')); $utcDate->setTimezone(new \DateTimeZone('Europe/Moscow')); $progressMsg .= "(Обновлено: " . $utcDate->format('d.m.Y H:i') . " МСК)"; } catch (\Exception $e) {}}
+                                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $progressMsg]);
+                                } else { /* ... сообщение "нет данных о прогрессе" или ошибка API ... */ }
+                            } catch (\GuzzleHttp\Exception\ClientException $e) { if ($e->getResponse() && $e->getResponse()->getStatusCode() == 404) { $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Данные о прогрессе для '{$selectedExerciseName}' не найдены."]); } else { $this->handleGuzzleError($e, $chatId, "тренировок (прогресс)"); }}
+                            catch (\Throwable $e) { $this->handleGuzzleError($e, $chatId, "тренировок (прогресс)"); }
                         }
+                        $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU;
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Выберите следующее действие:', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
+                        unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['training_mode']);
+
+                    } else { 
+                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Внутренняя ошибка: неизвестный режим.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                        $this->userStates[$chatId] = States::DEFAULT;
+                        unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['training_mode']);
                     }
-                    if ($selectedExerciseName) {
-                        if ($mode === 'log') {
-                            $this->userSelections[$chatId]['exercise'] = $selectedExerciseName;
-                            $this->userStates[$chatId] = States::AWAITING_REPS;
-                            $this->telegram->sendMessage([
-                                'chat_id' => $chatId,
-                                'text' => "Упражнение: {$selectedExerciseName}\nВведите количество повторений:",
-                                'reply_markup' => $this->keyboardService->makeBackOnly()
-                            ]);
-                        } elseif ($mode === 'view_progress' || $mode === 'view') {
-                            $activeEmail = $this->getActiveAccountEmail($chatId);
-                            $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
-                            if (!$activeEmail || !$workoutToken || !$group) {
-                                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Недостаточно данных для запроса прогресса (аккаунт, токен или группа мышц).', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
-                            } else {
-                                try {
-                                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
-                                    $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/user-exercise-progress";
-                                    $queryParams = [
-                                        'muscle_group' => $group,
-                                        'exercise_name' => $selectedExerciseName
-                                    ];
-
-                                    Log::info("WORKOUT PROGRESS: Запрос прогресса", ['url' => $serviceUrl, 'params' => $queryParams, 'email' => $activeEmail]);
-                                    $response = $client->get($serviceUrl, [
-                                        'headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer ' . $workoutToken],
-                                        'query' => $queryParams
-                                    ]);
-                                    $statusCode = $response->getStatusCode();
-                                    $responseBody = json_decode($response->getBody()->getContents(), true);
-                                    Log::info("WORKOUT PROGRESS: Ответ от сервера", ['status' => $statusCode, 'body' => $responseBody]);
-
-                                    if ($statusCode === 200 && isset($responseBody['data']) && !empty($responseBody['data']) && isset($responseBody['data']['record_weight'])) {
-                                        $progressData = $responseBody['data'];
-                                        $progressMsg = "Прогресс по упражнению '{$selectedExerciseName}' (Группа: {$group}):\n";
-                                        $progressMsg .= "- Рекордный вес: " . ($progressData['record_weight'] ?? 'н/д') . " кг\n";
-                                        $progressMsg .= "- Рекордные повторения: " . ($progressData['record_repeats'] ?? 'н/д') . "\n";
-                                        $progressMsg .= "- Последний вес: " . ($progressData['last_weight'] ?? 'н/д') . " кг\n";
-                                        $progressMsg .= "- Последние повторения: " . ($progressData['last_repeats'] ?? 'н/д') . "\n";
-                                        if (isset($progressData['updated_at'])) {
-                                             try {
-                                                 $date = new \DateTime($progressData['updated_at']);
-                                                 $progressMsg .= "(Обновлено: " . $date->format('d.m.Y H:i') . ")";
-                                             } catch (\Exception $dateEx) { /* Log or ignore date parsing error */ }
-                                        }
-                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $progressMsg]);
-                                    } else {
-                                        $apiMessage = $this->extractErrorMessage($responseBody, "тренировок (прогресс)");
-                                        $userMessage = (isset($responseBody['data']) && (empty($responseBody['data']) || !isset($responseBody['data']['record_weight'])))
-                                                       ? "Нет данных о прогрессе для упражнения '{$selectedExerciseName}' (группа: {$group})."
-                                                       : "Не удалось получить данные о прогрессе: " . $apiMessage;
-                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $userMessage]);
-                                    }
-                                } catch (\GuzzleHttp\Exception\ClientException $e) {
-                                    if ($e->getResponse() && $e->getResponse()->getStatusCode() == 404) {
-                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Данные о прогрессе для '{$selectedExerciseName}' (группа: {$group}) не найдены на сервере."]);
-                                    } else {
-                                        $this->handleGuzzleError($e, $chatId, "тренировок (прогресс)");
-                                    }
-                                } catch (\Throwable $e) {
-                                    $this->handleGuzzleError($e, $chatId, "тренировок (прогресс)");
-                                }
-                            }
-                            $this->userStates[$chatId] = States::DEFAULT;
-                            $this->telegram->sendMessage([
-                                'chat_id' => $chatId,
-                                'text' => 'Выберите следующее действие:',
-                                'reply_markup' => $this->keyboardService->makeTrainingMenu()
-                            ]);
-                            unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode'], $this->userSelections[$chatId]['exercise']);
-                        } elseif ($mode === 'technique') { 
-                            $activeEmail = $this->getActiveAccountEmail($chatId);
-                            $workoutToken = $this->userData[$chatId]['accounts'][$activeEmail]['workout_api_token'] ?? null;
-
-                            if (!$activeEmail || !$workoutToken) {
-                                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса тренировок не определен.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
-                            } else {
-                                try {
-                                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
-                                    $encodedExerciseName = rawurlencode($selectedExerciseName);
-                                    $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/exercise/by-name/{$encodedExerciseName}/guide";
-                                    Log::info("WORKOUT TECHNIQUE: Запрос гайда", ['url' => $serviceUrl, 'exercise' => $selectedExerciseName, 'email' => $activeEmail]);
-                                    $response = $client->get($serviceUrl, [
-                                        'headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer ' . $workoutToken]
-                                    ]);
-                                    $statusCode = $response->getStatusCode();
-                                    $responseBody = json_decode($response->getBody()->getContents(), true);
-                                    Log::info("WORKOUT TECHNIQUE: Ответ от сервера", ['status' => $statusCode, 'body' => $responseBody]);
-                                    if ($statusCode === 200 && !empty($responseBody['data']['tutorial'])) {
-                                        $tutorialLink = $responseBody['data']['tutorial'];
-                                        $this->telegram->sendMessage([
-                                            'chat_id' => $chatId,
-                                            'text' => "Гайд по упражнению '{$selectedExerciseName}':\n{$tutorialLink}",
-                                            'disable_web_page_preview' => false // Показываем превью ссылки
-                                        ]);
-                                    } else {
-                                        $apiMessage = $this->extractErrorMessage($responseBody, "тренировок (гайд)");
-                                        $userMessage = ($responseBody['data']['tutorial'] === null || $apiMessage === "Неизвестная ошибка от сервиса тренировок (гайд).")
-                                                    ? "Гайд для упражнения '{$selectedExerciseName}' не найден."
-                                                    : "Не удалось получить гайд: " . $apiMessage;
-                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => $userMessage]);
-                                    }
-                                } catch (\GuzzleHttp\Exception\ClientException $e) {
-                                    if ($e->getResponse() && $e->getResponse()->getStatusCode() == 404) {
-                                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => "Гайд для упражнения '{$selectedExerciseName}' не найден на сервере."]);
-                                    } else {
-                                        $this->handleGuzzleError($e, $chatId, "тренировок (гайд)");
-                                    }
-                                } catch (\Throwable $e) {
-                                    $this->handleGuzzleError($e, $chatId, "тренировок (гайд)");
-                                }
-                            }
-                            $this->userStates[$chatId] = States::DEFAULT;
-                            $this->telegram->sendMessage([ 
-                                'chat_id' => $chatId,
-                                'text' => 'Выберите следующее действие:',
-                                'reply_markup' => $this->keyboardService->makeTrainingMenu()
-                            ]);
-                            unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode'], $this->userSelections[$chatId]['exercise']);
-
-                        } else {
-                            $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Внутренняя ошибка: неизвестный режим выбора.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
-                            $this->userStates[$chatId] = States::DEFAULT;
-                            unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['mode'], $this->userSelections[$chatId]['exercise']);
-                        }
-                    } else {
-                        $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Неверный номер упражнения.', 'reply_markup' => $this->keyboardService->makeBackOnly()]);
-                    }
-                    break; 
-            } 
-            return;
+                } else { 
+                    $exerciseListObjects = $this->exercises[$group][$type]; $exerciseNames = [];
+                    foreach ($exerciseListObjects as $ex) { $exerciseNames[] = is_array($ex) && isset($ex['name']) ? $ex['name'] : (is_string($ex) ? $ex : 'Неизв. упр.');}
+                    $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Пожалуйста, выберите упражнение с помощью кнопок.', 'reply_markup' => $this->keyboardService->makeOptionsMenu($exerciseNames, true, 1)]);
+                }
+                break; 
         } 
     }
     private function handleTrainingLogInputState(int $chatId, string $text, Message $message, int $currentState): void
@@ -1953,12 +1944,20 @@ class BotKernel
             case '🤸 Посмотреть технику':
                     if (in_array($currentState, [States::DEFAULT, States::LOGGING_TRAINING_MENU, States::DIARY_MENU, States::BJU_MENU])) { 
                         $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; 
-                        $this->userSelections[$chatId] = ['mode' => 'technique']; 
+
+                        if (!isset($this->userSelections[$chatId])) { 
+                        $this->userSelections[$chatId] = [];
+                        }
+                        $this->userSelections[$chatId]['training_mode'] = 'technique';
+                        unset($this->userSelections[$chatId]['group']);
+                        unset($this->userSelections[$chatId]['type']);
+                        unset($this->userSelections[$chatId]['exercise']);; 
+
                         $groupKeys = array_keys($this->exercises);
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
                             'text' => "Для просмотра техники, выберите группу мышц:\n" . $this->generateListMessage($groupKeys),
-                            'reply_markup' => $this->keyboardService->makeBackOnly()
+                            'reply_markup' => $this->keyboardService->makeOptionsMenu($groupKeys, true, 2)
                         ]);
                     }
                    break;
@@ -2028,14 +2027,22 @@ class BotKernel
                  }
                 break;
             case '📈 Посмотреть прогресс':
-                 if ($currentState === States::DEFAULT ) {
+                 if (in_array($currentState, [States::DEFAULT, States::LOGGING_TRAINING_MENU])) {
                      $this->userStates[$chatId] = States::SELECTING_MUSCLE_GROUP; 
-                     $this->userSelections[$chatId] = ['mode' => 'view']; 
+
+                    if (!isset($this->userSelections[$chatId])) { 
+                        $this->userSelections[$chatId] = [];
+                    }
+                    $this->userSelections[$chatId]['training_mode'] = 'view_progress';
+                    unset($this->userSelections[$chatId]['group']);
+                    unset($this->userSelections[$chatId]['type']);
+                    unset($this->userSelections[$chatId]['exercise']);
+
                      $groupKeys = array_keys($this->exercises);
                      $this->telegram->sendMessage([
                          'chat_id' => $chatId,
                          'text' => "Для просмотра прогресса, выберите группу мышц:\n" . $this->generateListMessage($groupKeys),
-                         'reply_markup' => $this->keyboardService->makeBackOnly()
+                         'reply_markup' => $this->keyboardService->makeOptionsMenu($groupKeys, true, 2)
                      ]);
                  }
                 break;
@@ -2114,7 +2121,7 @@ class BotKernel
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
                         'text' => "Выберите группу мышц:\n" . $this->generateListMessage($groupKeys),
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                        'reply_markup' => $this->keyboardService->makeOptionsMenu($groupKeys, true, 2)
                     ]);
                  }
                 break;
@@ -2255,7 +2262,7 @@ class BotKernel
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
                         'text' => 'За какую дату удалить прием пищи? (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
-                        'reply_markup' => $this->keyboardService->makeBackOnly()
+                        'reply_markup' => $this->keyboardService->makeDateSelectionInline()
                     ]);
                 } else {
                     Log::warning("Кнопка '🗑️ Удалить приём пищи' нажата в неожиданном состоянии: {$currentState} для chatId {$chatId}");
@@ -2273,7 +2280,7 @@ class BotKernel
                      $this->telegram->sendMessage([
                          'chat_id' => $chatId,
                          'text' => 'Введите дату для просмотра рациона (ДД.ММ.ГГГГ, сегодня, вчера) или "Назад":',
-                         'reply_markup' => $this->keyboardService->makeBackOnly()
+                         'reply_markup' => $this->keyboardService->makeDateSelectionInline()
                      ]);
                  }
                 break;
@@ -2436,75 +2443,69 @@ class BotKernel
                 break;
 
             case '⬅️ Назад':
-                if ($currentState === States::LOGGING_TRAINING_MENU) { 
-                    $this->userStates[$chatId] = States::DEFAULT; 
-                    unset($this->currentTrainingLog[$chatId]);
+                Log::info("Обработка 'Назад' в handleMenuCommands, текущее состояние: {$currentState}");
+                if (in_array($currentState, [
+                    States::LOGGING_TRAINING_MENU,
+                    States::DIARY_MENU,
+                    States::BJU_MENU,
+                ])) {
+                    $this->userStates[$chatId] = States::DEFAULT;
+                    unset($this->currentTrainingLog[$chatId]); 
+                    unset($this->userSelections[$chatId]);     
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Выход в главное меню.',
+                        'reply_markup' => $this->keyboardService->makeMainMenu()
+                    ]);
+                }
+                elseif ($currentState === States::DEFAULT) {
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Главное меню.',
+                        'reply_markup' => $this->keyboardService->makeMainMenu()
+                    ]);
+                    unset($this->userSelections[$chatId]);
+                } else {
+
+                    Log::warning("Кнопка 'Назад' нажата в неожиданном состоянии: {$currentState} для chatId {$chatId}. Возврат в главное меню.");
+                    $this->userStates[$chatId] = States::DEFAULT;
                     unset($this->userSelections[$chatId]);
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
-                        'text' => 'Запись тренировки отменена. Возврат в меню тренировок.',
-                        'reply_markup' => $this->keyboardService->makeTrainingMenu()
+                        'text' => 'Действие отменено. Возврат в главное меню.',
+                        'reply_markup' => $this->keyboardService->makeMainMenu()
                     ]);
-                } elseif ($currentState === States::DIARY_MENU) { 
-                    $this->userStates[$chatId] = States::DEFAULT; 
-                     unset($this->userSelections[$chatId]); 
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => 'Возврат в меню Питания.',
-                        'reply_markup' => $this->keyboardService->makeNutritionMenu()
-                    ]);
-                } elseif ($currentState === States::BJU_MENU) {
-                    $this->userStates[$chatId] = States::DEFAULT;
-                     unset($this->userSelections[$chatId]); 
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => 'Возврат в меню Питания.',
-                        'reply_markup' => $this->keyboardService->makeNutritionMenu()
-                    ]);
-                } elseif ($currentState === States::DEFAULT) { 
-                    $replyTo = $message->getReplyToMessage();
-                    $lastBotText = $replyTo ? $replyTo->getText() : '';
-
-                    if ($lastBotText && (str_contains($lastBotText, 'Раздел питания') || str_contains($lastBotText, 'Дневник питания') || str_contains($lastBotText, 'Управление базой БЖУ'))) {
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => 'Главное меню.',
-                             'reply_markup' => $this->keyboardService->makeMainMenu()
-                         ]);
-                    } elseif ($lastBotText && (str_contains($lastBotText, 'Раздел тренировок') || str_contains($lastBotText, 'записи тренировки'))) {
-                         $this->telegram->sendMessage([
-                             'chat_id' => $chatId,
-                             'text' => 'Главное меню.',
-                             'reply_markup' => $this->keyboardService->makeMainMenu()
-                         ]);
-                    } elseif ($lastBotText && str_contains($lastBotText, 'Настройки аккаунта')) {
-                         $this->telegram->sendMessage([
-                             'text' => 'Главное меню.',
-                             'reply_markup' => $this->keyboardService->makeMainMenu()
-                         ]);
-                    } else {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => 'Вы уже в главном меню.',
-                            'reply_markup' => $this->keyboardService->makeMainMenu()
-                        ]);
-                    }
-                    $this->userStates[$chatId] = States::DEFAULT;
-                    unset($this->userSelections[$chatId]); 
                 }
                 break;
-            default:
-                 if ($currentState === States::DEFAULT) {
-                     $this->telegram->sendMessage([
-                         'chat_id' => $chatId,
-                         'text' => 'Неизвестная команда или текст. Используйте кнопки меню.',
-                         'reply_markup' => $this->keyboardService->makeMainMenu()
-                     ]);
-                 }
 
-                 elseif ($currentState !== States::DEFAULT) {
-                     echo "Warning: Unhandled text '{$text}' in state {$currentState} for chat {$chatId}\n";
-                 }
+            default: 
+                if ($currentState === States::DEFAULT) {
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Неизвестная команда. Пожалуйста, используйте кнопки меню.',
+                        'reply_markup' => $this->keyboardService->makeMainMenu()
+                    ]);
+                } elseif (in_array($currentState, [
+                    States::LOGGING_TRAINING_MENU,
+                    States::DIARY_MENU,
+                    States::BJU_MENU,
+                    
+                ])) {
+                    
+                    $menuKeyboard = match ($currentState) {
+                        States::LOGGING_TRAINING_MENU => $this->keyboardService->makeTrainingMenu(),
+                        States::DIARY_MENU => $this->keyboardService->makeDiaryMenu(),
+                        States::BJU_MENU => $this->keyboardService->makeBjuMenu(),
+                        default => $this->keyboardService->makeMainMenu() 
+                    };
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'Пожалуйста, используйте кнопки.',
+                        'reply_markup' => $menuKeyboard
+                    ]);
+                } else {
+                    Log::warning("Необработанный текст '{$text}' в состоянии {$currentState} попал в default handleMenuCommands.", ['chat_id' => $chatId]);
+                }
                 break;
         }
     }
@@ -2718,9 +2719,9 @@ class BotKernel
                     } else {
                         Log::warning("SWITCH_ACC WORKOUT: Токен для {$selectedEmail} вернул статус {$statusCode} или неверные данные.", ['response_body' => $responseBody]);
                     }
-                } catch (\GuzzleHttp\Exception\ClientException $e) { // 4xx ошибки
+                } catch (\GuzzleHttp\Exception\ClientException $e) { 
                     Log::warning("SWITCH_ACC WORKOUT: Ошибка клиента (4xx) при проверке токена для {$selectedEmail} - Статус: " . $e->getResponse()->getStatusCode() . ", Сообщение: " . $e->getMessage());
-                } catch (\Throwable $e) { // Все остальные ошибки
+                } catch (\Throwable $e) { 
                     $this->handleGuzzleError($e, $chatId, "тренировок (проверка токена)");
                 }
             }
@@ -2800,5 +2801,61 @@ class BotKernel
         ]);
         $this->userStates[$chatId] = States::DEFAULT;
         unset($this->userSelections[$chatId]);
+    }
+    private function handleCallbackQuery(int $chatId, string $callbackData, int $messageId): void
+    {
+        Log::info("Получен CallbackQuery", ['chat_id' => $chatId, 'data' => $callbackData, 'message_id' => $messageId]);
+        $currentState = $this->userStates[$chatId] ?? States::DEFAULT;
+        $dateToProcess = null;
+
+        if ($callbackData === 'date_today') {
+            $dateToProcess = date('Y-m-d');
+        } elseif ($callbackData === 'date_yesterday') {
+            $dateToProcess = date('Y-m-d', strtotime('-1 day'));
+        } elseif ($callbackData === 'date_cancel') {
+            $this->telegram->editMessageText([ 
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'text' => 'Выбор даты отменен.',
+                'reply_markup' => json_encode(['inline_keyboard' => []]) 
+            ]);
+
+            return;
+        }
+
+        if ($dateToProcess) {
+            $this->telegram->editMessageReplyMarkup([
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'reply_markup' => json_encode(['inline_keyboard' => []]) 
+            ]);
+            if (in_array($currentState, [
+                States::AWAITING_DATE_MANUAL_ADD, States::AWAITING_DATE_SEARCH_ADD,
+                States::AWAITING_DATE_VIEW_MEAL, States::AWAITING_DATE_DELETE_MEAL
+            ])) {
+                $fakeMessage = new Message(['text' => $dateToProcess, 'chat' => ['id' => $chatId]]);
+                Log::info("Проталкиваем дату '{$dateToProcess}' из callback в состояние {$currentState}");
+
+                if ($currentState === States::AWAITING_DATE_MANUAL_ADD ||
+                    $currentState === States::AWAITING_DATE_SEARCH_ADD ||
+                    $currentState === States::AWAITING_DATE_VIEW_MEAL ||
+                    $currentState === States::AWAITING_DATE_DELETE_MEAL)
+                {
+
+                    $dateTextForHandler = date('d.m.Y', strtotime($dateToProcess));
+                    $fakeMessage = new Message(['text' => $dateTextForHandler, 'chat' => ['id' => $chatId]]);
+
+                    $this->handleDiaryStates($chatId, $dateTextForHandler, $fakeMessage, $currentState);
+                }
+
+            } else {
+                Log::warning("CallbackQuery для даты получен в неожиданном состоянии: {$currentState}", ['chat_id' => $chatId, 'data' => $callbackData]);
+                $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Произошла ошибка при выборе даты. Пожалуйста, попробуйте еще раз.', 'reply_markup' => $this->keyboardService->makeMainMenu()]);
+                $this->userStates[$chatId] = States::DEFAULT;
+            }
+        } else {
+            Log::warning("Неизвестный callback_data", ['chat_id' => $chatId, 'data' => $callbackData]);
+
+        }
     }
 }
