@@ -1,0 +1,55 @@
+version: '3.8' # Указываем версию синтаксиса docker-compose
+
+services:
+  # Сервис для нашего Telegram-бота
+  bot:
+    # Инструкции по сборке образа для этого сервиса
+    build:
+      context: . # Контекст сборки - текущая директория (где лежит Dockerfile)
+      dockerfile: Dockerfile # Имя Dockerfile, который нужно использовать
+    container_name: pius_telegram_bot # Имя контейнера после запуска
+    restart: unless-stopped # Политика перезапуска: перезапускать, если не был остановлен вручную
+
+    # Проброс переменных окружения из .env файла хост-машины в контейнер
+    # Убедись, что у тебя есть .env файл в корне проекта с нужными переменными
+    env_file:
+      - .env
+
+    # Можно дополнительно определить или переопределить переменные окружения здесь:
+    # environment:
+    #   - APP_ENV=local # или production при развертывании
+    #   - APP_DEBUG=true # или false
+    #   - DB_CONNECTION= # Если бы была БД
+    #   # Если сервисы питания и тренировок тоже в Docker и в этой же docker-compose сети:
+    #   # NUTRITION_SERVICE_BASE_URI=http://nutrition_service_container_name:8080
+    #   # WORKOUT_SERVICE_BASE_URI=http://workout_service_container_name:8001
+    #   # Если они на хосте, и бот в Docker, то для Docker Desktop (Windows/Mac):
+    #   # NUTRITION_SERVICE_BASE_URI=http://host.docker.internal:8080
+    #   # WORKOUT_SERVICE_BASE_URI=http://host.docker.internal:8001
+
+    # Проброс volumes (томов)
+    # Это полезно для разработки, чтобы изменения в коде сразу отражались в контейнере
+    # Для продакшена этот volume с кодом обычно не нужен, так как код уже "запечен" в образ.
+    volumes:
+      - .:/var/www/app # Синхронизирует текущую директорию проекта с /var/www/app в контейнере
+      - /var/www/app/vendor # Анонимный volume для vendor, чтобы он не перезатирался синхронизацией с хоста, если на хосте его нет или он другой
+
+      # Проброс директории с логами, чтобы они сохранялись на хост-машине
+      - ./storage/logs:/var/www/app/storage/logs
+
+      # Если ты все еще используешь JSON для хранения bot_users.json,
+      # нужно пробросить и эту директорию, чтобы данные не терялись.
+      # - ./storage/bot:/var/www/app/storage/bot
+
+    # Если бы бот был веб-приложением, мы бы пробрасывали порты:
+    # ports:
+    #   - "8000:80" # Пример: порт 8000 хоста на порт 80 контейнера
+
+    # Зависит от (если бы у нас были другие сервисы, например, БД):
+    # depends_on:
+    #   - db_service_name
+
+# Можно определить сети, если нужно изолировать или соединять несколько групп контейнеров
+# networks:
+#   default:
+#     driver: bridge

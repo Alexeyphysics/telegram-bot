@@ -1,6 +1,6 @@
 {
     "390311595": {
-        "active_account_email": "kondratenkoalexey9@gmail.com",
+        "active_account_email": "sasa@sas.com",
         "accounts": {
             "kondratenkoalexey9@gmail.com": {
                 "name": "Алексей",
@@ -8,6 +8,44 @@
                 "password": "$2y$10$iW8FJc9yzizXuby6sqkbSOQkQ17jYpF3fKl1guSRSLaDdFhixPvii",
                 "nutrition_api_token": "15|OXYRxgYEQi8k1XXOUzxloinGItWdurJSUgPDXu4Jab52527e",
                 "workout_api_token": "2|TGHkhJafNaKedZO793gxW797L3hMl74kZ1vZZndsea8c2894"
+            },
+            "sasa@sas.com": {
+                "name": "Алексей",
+                "email": "sasa@sas.com",
+                "password": "$2y$10$j0s6Eu8vh9kXXCdkCDr9he88y.DCSZF02TdcxgtgLWFGW8KRYa5zK",
+                "nutrition_api_token": "1|rzVTNPzkh1MHa68rwtdyFxK0JkdmMpZQiSBN0nHFfde86a8b",
+                "workout_api_token": "1|zm83MrOLkhmKR3zjBOSH1KpghTfONVgxXbPnndPT5504b29e"
+            }
+        }
+    },
+    "755953053": {
+        "active_account_email": "workout@gmail.com",
+        "accounts": {
+            "workout@gmail.com": {
+                "name": "Илья",
+                "email": "workout@gmail.com",
+                "password": "$2y$10$ol2Df3zW.Tn8mNeOpOxlNeDa7Ht\/k7i.ywaT5LnLaTmo1ulwq9XMa",
+                "nutrition_api_token": "2|GwwU0eNslH0Mv8z00OL3dxf5Ll6ZmaDXPGphneLvcf2e471f",
+                "workout_api_token": "2|phOUKPksJm0xyTj4ZBWbuYCpDCiThYjq5pZqqzXJ7857dd34"
+            },
+            "tuntuntunsahur@gmail.com": {
+                "name": "Тун Тун Тун Сахур",
+                "email": "tuntuntunsahur@gmail.com",
+                "password": "$2y$10$kwVP0J9WprqgCnuE8gOAoO63hzYANzaEIY7IedeTeZsk3EdYRSJgi",
+                "nutrition_api_token": "4|dYbMmVrzMC8RNWx15HRzI4Ue3G8Zn9UFCtot2rpSffb75c91",
+                "workout_api_token": "4|nFMBLs6uCHjI1pvDq32aYxQ9CtXeEoEpcd42OJzl42c18296"
+            }
+        }
+    },
+    "1219908707": {
+        "active_account_email": "pave1@mail.com",
+        "accounts": {
+            "pave1@mail.com": {
+                "name": "Павел",
+                "email": "pave1@mail.com",
+                "password": "$2y$10$RgIZu3VK.th4i5oggLBsnuNAvXSbCyTMgYoAz.DegzpQ51YuaM9ne",
+                "nutrition_api_token": "3|X27KyRZL53yTv0bggc7HGRPYuJW8VRafknCeqhcu28effd34",
+                "workout_api_token": "3|JbXBteVt2gN2bsYNSnDkcuPdI7mjyEBrNtf5KjUa64d49682"
             }
         }
     }

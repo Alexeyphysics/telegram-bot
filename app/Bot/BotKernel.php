@@ -593,7 +593,7 @@ class BotKernel
     }
     private function registerAndLoginNutritionService(int $chatId, string $name, string $email, string $plainPassword): ?string
     {
-        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 5]);
+        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
         $nutritionUserRegistered = false;
         try {
             $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/register';
@@ -632,7 +632,7 @@ class BotKernel
     }
     private function registerWorkoutService(int $chatId, string $name, string $email, string $plainPassword): ?string
     {
-        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 5]);
+        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
 
         try {
             $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . '/api/v1/register';
@@ -757,7 +757,7 @@ class BotKernel
                                     'carbs' => (float) $productDataFromSelection['carbs']
                                 ];
                                 try {
-                                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                                    $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                                     $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/saved-foods';
                                     Log::info("NUTRITION SAVE FOOD: Requesting", ['url' => $serviceUrl, 'payload' => $payload]);
                                     $response = $client->post($serviceUrl, [
@@ -846,7 +846,7 @@ class BotKernel
                         if (!$activeEmail || !$nutritionToken) { $this->userStates[$chatId] = States::BJU_MENU; unset($this->userSelections[$chatId]['product_id_to_delete']); break; }
 
                         try {
-                            $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                            $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                             $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . "/api/v1/saved-foods/" . $productIdToDelete;
 
                             Log::info("NUTRITION DELETE PRODUCT: Requesting", ['url' => $serviceUrl, 'id' => $productIdToDelete]);
@@ -897,7 +897,7 @@ class BotKernel
                     break;
                 }
                 try {
-                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                    $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                     $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/saved-foods';
                     Log::info("NUTRITION PRODUCT SEARCH (FETCH ALL): Запрос всех продуктов для поиска", ['url' => $serviceUrl, 'email' => $activeEmail, 'searchTerm' => $searchTermLower]);
                     $response = $client->get($serviceUrl, [
@@ -1077,7 +1077,7 @@ class BotKernel
                 }
 
                 try {
-                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                    $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                     $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/saved-foods';
 
                     Log::info("DIARY SEARCH ADD (FETCH ALL): Запрос всех сохраненных продуктов для поиска", ['url' => $serviceUrl, 'email' => $activeEmail, 'searchTerm' => $searchTermLower]);
@@ -1216,7 +1216,7 @@ class BotKernel
                         'eaten_at' => $diaryEntryData['date']
                     ];
                     try {
-                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                         $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods';
                         Log::info("DIARY ADD SEARCH: Requesting", ['url' => $serviceUrl, 'payload' => $payload, 'email' => $activeEmail]);
                         $response = $client->post($serviceUrl, [
@@ -1367,7 +1367,7 @@ class BotKernel
                         'eaten_at' => $diaryEntryData['date']     
                     ];
                     try {
-                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                         $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods';
                         Log::info("DIARY ADD MANUAL: Requesting", ['url' => $serviceUrl, 'payload' => $payload, 'email' => $activeEmail]);
                         $response = $client->post($serviceUrl, [
@@ -1432,7 +1432,7 @@ class BotKernel
                 $nutritionToken = $this->userData[$chatId]['accounts'][$activeEmail]['nutrition_api_token'] ?? null;
                 if (!$activeEmail || !$nutritionToken) { $this->userStates[$chatId] = States::DIARY_MENU; break; }
                 try {
-                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                    $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                     $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods/show-by-date';
                     $queryParams = ['date' => $dateToDelete];
                     Log::info("DIARY DELETE (LIST): Запрос списка приемов пищи для удаления", ['url' => $serviceUrl, 'params' => $queryParams, 'email' => $activeEmail]);
@@ -1535,7 +1535,7 @@ class BotKernel
                         break;
                     }
                     try {
-                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                         $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . "/api/v1/eaten-foods/" . $mealEntryIdToDelete;
                         Log::info("DIARY DELETE ENTRY: Requesting", ['url' => $serviceUrl, 'id_to_delete' => $mealEntryIdToDelete, 'email' => $activeEmail]);
                         $response = $client->delete($serviceUrl, [
@@ -1607,7 +1607,7 @@ class BotKernel
                 }
 
                 try {
-                    $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                    $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                     $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/eaten-foods/show-by-date';
 
                     $queryParams = [
@@ -1758,7 +1758,7 @@ class BotKernel
                             unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['training_mode'], $this->userSelections[$chatId]['exercise']);
                         } else {
                             try {
-                                $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                                $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                                 $encodedExerciseName = rawurlencode($selectedExerciseName); 
                                 $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/exercises/by-name/{$encodedExerciseName}/guide";
                                 Log::info("WORKOUT TECHNIQUE: Запрос гайда", ['url' => $serviceUrl, 'exercise' => $selectedExerciseName, 'email' => $activeEmail]);
@@ -1810,7 +1810,7 @@ class BotKernel
                         if (!$activeEmail || !$workoutToken || !$group) { /* ... ошибка нет данных ... */ }
                         else {
                             try {
-                                $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                                $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                                 $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/user-exercise-progress";
                                 $queryParams = ['muscle_group' => $group, 'exercise_name' => $selectedExerciseName];
                                 Log::info("WORKOUT PROGRESS: Запрос", ['url' => $serviceUrl, 'params' => $queryParams]);
@@ -2046,7 +2046,7 @@ class BotKernel
                  }
                 break;
             case '➕ Записать тренировку':
-                if ($currentState === States::DEFAULT ) {
+                if (in_array($currentState, [States::DEFAULT, States::LOGGING_TRAINING_MENU])) {
                     $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU; 
                     $this->currentTrainingLog[$chatId] = []; 
                     unset($this->userSelections[$chatId]); 
@@ -2092,7 +2092,7 @@ class BotKernel
                         break;
                     }
                     try {
-                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 8]);
                         $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . '/api/v1/lagging-muscle-groups';
 
                         Log::info("WORKOUT LAGGING GROUPS: Запрос", ['url' => $serviceUrl, 'email' => $activeEmail]);
@@ -2199,7 +2199,7 @@ class BotKernel
                     $payload = ['exercises' => $apiExercisesPayload];
                     $apiCallSuccessful = false;
                     try {
-                        $client = new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 5]);
+                        $client = new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 9]);
                         $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . '/api/v1/workouts';
 
                         Log::info("WORKOUT SAVE: Отправка данных тренировки на сервер", ['url' => $serviceUrl, 'email' => $activeEmail, 'exercise_count' => count($apiExercisesPayload)]);
@@ -2334,7 +2334,7 @@ class BotKernel
                     if (!$nutritionToken) { break; }
 
                     try {
-                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 9]);
                         $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/saved-foods';
                         Log::info("NUTRITION DELETE (LIST): Запрос списка продуктов для удаления", ['url' => $serviceUrl, 'email' => $activeEmail]);
                         $response = $client->get($serviceUrl, [
@@ -2381,7 +2381,7 @@ class BotKernel
                     }
 
                     try {
-                        $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
+                        $client = new \GuzzleHttp\Client(['timeout' => 20, 'connect_timeout' => 9]);
                         $serviceUrl = env('NUTRITION_SERVICE_BASE_URI', 'http://localhost:8080') . '/api/v1/saved-foods';
                         $queryParams = [
                         ];
@@ -2703,7 +2703,7 @@ class BotKernel
             $nutritionToken = $accountToSwitch['nutrition_api_token'] ?? null;
             $workoutToken = $accountToSwitch['workout_api_token'] ?? null;
 
-            $client = new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 5]); 
+            $client = new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 9]); 
 
             $nutritionTokenValid = false;
             $workoutTokenValid = false;

@@ -1,200 +1,198 @@
 # PIUS Telegram Bot
 
-**Your Personal Nutrition and Workout Assistant** 🤖
+**Ваш персональный помощник по питанию и тренировкам** 🤖
 
 ---
 
-## 🚀 Overview
+## 🚀 О проекте
 
-**PIUS Telegram Bot** is your ultimate companion for tracking nutrition and workouts. Seamlessly integrated with external APIs, it helps you manage your diet, log exercises, and monitor progress with ease.
+**PIUS Telegram Bot** — это ваш личный ассистент для отслеживания питания и тренировок. Бот интегрируется с внешними сервисами, чтобы предоставлять актуальную информацию и сохранять ваши данные.
 
-### ✨ Key Features
+### ✨ Основные возможности
 
-- **Account Management**  
-  - Create and switch between multiple accounts effortlessly.
-  
-- **Nutrition Diary**  
-  - Log meals manually or from your saved product database.  
-  - View daily diet with detailed macros (calories, proteins, fats, carbs).  
-  - Delete diary entries as needed.
+- **Управление аккаунтами**  
+  - Создание нескольких аккаунтов и переключение между ними.  
 
-- **Product Database**  
-  - Save custom products with their nutritional info (macros auto-calculated).  
-  - Search, view, or delete saved products.
+- **Дневник питания**  
+  - Запись приемов пищи (вручную или из сохраненной базы продуктов).  
+  - Просмотр рациона за выбранную дату с подсчетом БЖУК (белки, жиры, углеводы, калории).  
+  - Удаление записей из дневника.  
 
-- **Workout Tracking**  
-  - Record workouts with exercises, weights, and reps.  
-  - Access exercise technique guides via external resources.  
-  - Track progress for specific exercises.  
-  - Identify lagging muscle groups.
+- **База продуктов (БЖУ)**  
+  - Сохранение собственных продуктов с их пищевой ценностью (калории рассчитываются автоматически).  
+  - Просмотр, поиск и удаление сохраненных продуктов.  
+
+- **Тренировки**  
+  - Запись тренировок с указанием упражнений, веса и повторений.  
+  - Просмотр техники выполнения упражнений через внешние гайды.  
+  - Отслеживание прогресса по конкретным упражнениям.  
+  - Определение отстающих групп мышц.  
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠️ Технологический стек
 
-- **PHP** (≥ 8.1)  
-- **Laravel Framework** (for CLI app structure, configuration, and logging)  
+- **PHP** (версия ≥ 8.1)  
+- **Laravel Framework** (для структуры CLI-приложения, конфигурации и логирования)  
 - **Telegram Bot SDK**: `irazasyed/telegram-bot-sdk`  
-- **HTTP Client**: `guzzlehttp/guzzle`  
-- **Dependency Management**: Composer  
+- **HTTP-клиент**: `guzzlehttp/guzzle`  
+- **Управление зависимостями**: Composer  
 
 ---
 
-## ⚙️ Installation and Setup
+## ⚙️ Установка и запуск
 
-### 📋 Prerequisites
+### 📋 Требования
 
-- **PHP** ≥ 8.1 with extensions: `mbstring`, `curl`, `json`, `xml`, etc.  
-- **Composer** for dependency management  
-- Access to external APIs:  
-  - **Nutrition Service** (for diet data)  
-  - **Workout Assistant** (for workout data)  
+- **PHP** ≥ 8.1 с расширениями: `mbstring`, `curl`, `json`, `xml` и др.  
+- **Composer** для управления зависимостями  
+- Доступ к внешним API-сервисам:  
+  - **Nutrition Service** (сервис питания)  
+  - **Workout Assistant** (сервис тренировок)  
 
-### 🛠️ Installation Steps
+### 🛠️ Шаги установки
 
-1. **Clone the Repository**  
+1. **Клонировать репозиторий**  
    ```bash
    git clone https://your-repository-url/pius-telegram-bot.git
    cd pius-telegram-bot
    ```
 
-2. **Install Dependencies**  
+2. **Установить зависимости**  
    ```bash
    composer install
    ```
 
-3. **Set Up Environment Variables**  
-   - Copy the example `.env` file:  
+3. **Настроить переменные окружения**  
+   - Скопировать файл `.env.example` в `.env`:  
      ```bash
      cp .env.example .env
      ```
-   - Edit `.env` with the following:  
+   - Отредактировать `.env`, указав следующие значения:  
      ```dotenv
      APP_NAME="PIUS Telegram Bot"
-     APP_ENV=local  # or production
-     APP_KEY=       # Generate with `php artisan key:generate`
-     APP_DEBUG=true # or false for production
+     APP_ENV=local  # или production
+     APP_KEY=       # Сгенерировать с помощью `php artisan key:generate`
+     APP_DEBUG=true # или false для production
      APP_URL=http://localhost
 
      LOG_CHANNEL=stack
      LOG_DEPRECATIONS_CHANNEL=null
-     LOG_LEVEL=debug  # or info/error for production
+     LOG_LEVEL=debug  # или info/error для production
 
-     # Telegram Bot Token (get from @BotFather)
-     TELEGRAM_BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
+     # Токен Telegram-бота (получить у @BotFather)
+     TELEGRAM_BOT_TOKEN="ВАШ_ТЕЛЕГРАМ_БОТ_ТОКЕН"
 
-     # External API Base URIs
-     NUTRITION_SERVICE_BASE_URI="YOUR_NUTRITION_SERVICE_ADDRESS"  # e.g., http://localhost:8080
-     WORKOUT_SERVICE_BASE_URI="YOUR_WORKOUT_SERVICE_ADDRESS"      # e.g., http://localhost:8001
+     # Базовые URI внешних API-сервисов
+     NUTRITION_SERVICE_BASE_URI="АДРЕС_ВАШЕГО_NUTRITION_SERVICE"  # например, http://localhost:8080
+     WORKOUT_SERVICE_BASE_URI="АДРЕС_ВАШЕГО_WORKOUT_SERVICE"      # например, http://localhost:8001
 
-     # Data Storage (for bot_users.json; others deprecated)
+     # Настройки хранилища данных (для bot_users.json; остальные файлы устарели)
      USER_DATA_PATH="storage/bot/bot_users.json"
-     # PRODUCT_DATA_PATH="storage/bot/bot_products.json"  # Deprecated
-     # DIARY_DATA_PATH="storage/bot/bot_diary.json"       # Deprecated
-     # TRAINING_LOG_DATA_PATH="storage/bot/bot_trainings.json"  # Deprecated
+     # PRODUCT_DATA_PATH="storage/bot/bot_products.json"  # Устарело
+     # DIARY_DATA_PATH="storage/bot/bot_diary.json"       # Устарело
+     # TRAINING_LOG_DATA_PATH="storage/bot/bot_trainings.json"  # Устарело
      ```
 
-4. **Generate Application Key**  
+4. **Сгенерировать ключ приложения**  
    ```bash
    php artisan key:generate
    ```
 
-5. **Create Storage Directories**  
-   Ensure `storage/bot/` and `storage/logs/` exist and are writable:  
+5. **Создать необходимые директории**  
+   Убедитесь, что директории `storage/bot/` и `storage/logs/` существуют и доступны для записи:  
    ```bash
    mkdir -p storage/bot
    mkdir -p storage/logs
    chmod -R 775 storage bootstrap/cache
    ```
 
-### 🚀 Running the Bot
+### 🚀 Запуск бота
 
-- **Start the Bot (Long Polling)**  
+- **Запуск с Long Polling**  
   ```bash
   php artisan bot:run
   ```
 
-- **Run in Background (Production)**  
-  Use a process manager like **Supervisor**. Example configuration:  
+- **Запуск в фоновом режиме (для сервера)**  
+  Рекомендуется использовать менеджер процессов, например **Supervisor**. Пример конфигурации:  
   ```ini
   [program:pius-telegram-bot]
   process_name=%(program_name)s_%(process_num)02d
-  command=php /path/to/pius-telegram-bot/artisan bot:run
+  command=php /путь/к/проекту/pius-telegram-bot/artisan bot:run
   autostart=true
   autorestart=true
   stopasgroup=true
   killasgroup=true
-  user=server_user  # e.g., www-data
+  user=имя_пользователя_сервера  # например, www-data
   numprocs=1
   redirect_stderr=true
-  stdout_logfile=/path/to/pius-telegram-bot/storage/logs/supervisor_bot.log
+  stdout_logfile=/путь/к/проекту/pius-telegram-bot/storage/logs/supervisor_bot.log
   stopwaitsecs=300
   ```
 
 ---
 
-## 📁 Project Structure
+## 📁 Структура проекта
 
-Key directories and files:
+Ключевые директории и файлы:
 
-- **`app/Bot/`**: Core bot logic  
-  - `BotKernel.php`: Handles updates and user states  
-  - `Constants/States.php`: User state constants  
-  - `Keyboard/KeyboardService.php`: Telegram keyboard generation  
-  - `Service/DataStorageService.php`: Manages data storage (e.g., `bot_users.json`)  
+- **`app/Bot/`**: Основная логика бота  
+  - `BotKernel.php`: Обработка обновлений и состояний пользователей  
+  - `Constants/States.php`: Константы состояний  
+  - `Keyboard/KeyboardService.php`: Генерация Telegram-клавиатур  
+  - `Service/DataStorageService.php`: Работа с хранилищем данных (в основном для `bot_users.json`)  
 
-- **`app/Console/Commands/RunTelegramBot.php`**: Artisan command to run the bot  
-- **`config/`**: Laravel configuration files  
-  - `app.php`: General app settings  
-  - `telegram.php`: Telegram Bot SDK config  
-  - `exercises.php`: Local exercise catalog (temporary, pending API)  
+- **`app/Console/Commands/RunTelegramBot.php`**: Artisan-команда для запуска бота  
+- **`config/`**: Конфигурационные файлы Laravel  
+  - `app.php`: Общие настройки приложения  
+  - `telegram.php`: Настройки Telegram Bot SDK  
+  - `exercises.php`: Локальный каталог упражнений (временный, до интеграции с API)  
 
-- **`storage/bot/`**: Stores JSON data (e.g., `bot_users.json`)  
-- **`storage/logs/`**: Laravel and bot logs  
-- **`.env`**: Environment variables  
-
----
-
-## 🤝 Interacting with the Bot
-
-1. Find the bot in Telegram by its username.  
-2. Send `/start` to begin.  
-3. Follow prompts to register your first account.  
-4. Use the menu buttons to navigate features.  
+- **`storage/bot/`**: Хранилище JSON-файлов (например, `bot_users.json`)  
+- **`storage/logs/`**: Логи Laravel и бота  
+- **`.env`**: Файл переменных окружения  
 
 ---
 
-## 🌐 External APIs
+## 🤝 Как пользоваться ботом
 
-The bot integrates with:  
+1. Найдите бота в Telegram по его имени пользователя.  
+2. Отправьте команду `/start`.  
+3. Следуйте инструкциям для регистрации первого аккаунта.  
+4. Используйте кнопки меню для доступа к функциям.  
+
+---
+
+## 🌐 Интеграция с внешними API
+
+Бот работает с двумя сервисами:  
 
 - **Nutrition Service**  
   - URL: `NUTRITION_SERVICE_BASE_URI`  
-  - Manages product macros and nutrition diary.  
+  - Хранит и управляет данными о продуктах (БЖУ) и дневником питания.  
 
 - **Workout Assistant**  
   - URL: `WORKOUT_SERVICE_BASE_URI`  
-  - Handles workout data, exercise progress, and technique guides.  
+  - Управляет данными о тренировках, упражнениях, прогрессе и технике выполнения.  
 
-Authentication uses **Bearer tokens**, stored per user account upon registration.
-
----
-
-## 📝 Future Plans (TODO)
-
-- Fetch exercise catalog from Workout Assistant API.  
-- Migrate `bot_users.json` to a Laravel database.  
-- Implement pagination for long lists (products, diary entries).  
-- Enhance UX and error handling.  
-- *Add your ideas here!*  
+Аутентификация осуществляется через **Bearer-токены**, которые бот получает при регистрации аккаунта и сохраняет для каждого пользователя.
 
 ---
 
-## ❓ Support
+## 📝 Планы на будущее (TODO)
 
-Encounter issues or have questions?  
-📌 Create an **Issue** in the repository.  
+- Загрузка каталога упражнений из API Workout Assistant.  
+- Перевод хранения данных пользователей (`bot_users.json`) на базу данных Laravel.  
+- Реализация пагинации для длинных списков (продукты, дневник).  
+- Улучшение интерфейса и обработки ошибок.  
+- *Ваши идеи приветствуются!*  
 
 ---
 
-**Happy Tracking with PIUS!** 💪
+## ❓ Вопросы и поддержка
+
+Если возникли проблемы или вопросы:  
+📌 Создайте **Issue** в репозитории.  
+
+---
