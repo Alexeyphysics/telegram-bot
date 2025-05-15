@@ -1,6 +1,6 @@
 {
     "390311595": {
-        "active_account_email": "Aaaaa@aa.com",
+        "active_account_email": "qwe@qwe.com",
         "accounts": {
             "Aaaaa@aa.com": {
                 "name": "Миша",
@@ -8,6 +8,13 @@
                 "password": "$2y$10$6cxwKv3Xcw6PENtVAUCs\/OMtpbtlC6EWLcfjd9GFDilcq7bLtwD7.",
                 "nutrition_api_token": "13|qrpvnWBmAF5aib50KpAPgGbF3JnefEi2PgtMVmwJ61338f5d",
                 "workout_api_token": "13|WXVmPH92NPTtFUwVweBEa3I8Hfjf2HJLYOTQndlz86279e83"
+            },
+            "qwe@qwe.com": {
+                "name": "check",
+                "email": "qwe@qwe.com",
+                "password": "$2y$10$2Al\/TYLLK5sQjnQ5nkVVHusqD7hUG77wG7hlqxHSGUi7MI7ThHNKO",
+                "nutrition_api_token": "14|Cq71NxbD7STfFBdKq7KpBPNak2jReqqunDRKpQe044f0bf90",
+                "workout_api_token": "1|T1G958Q5usa8sZJWG8UswAUv2y8qCzUTDpm5vgEDac05fe60"
             }
         }
     }
