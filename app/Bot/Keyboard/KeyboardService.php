@@ -1,6 +1,5 @@
 <?php
 
-// app/Bot/Keyboard/KeyboardService.php
 namespace Bot\Keyboard;
 
 use Telegram\Bot\Keyboard\Keyboard;
@@ -11,13 +10,11 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                // ---> ДОБАВЛЕНЫ EMOJI <---
                 Keyboard::button(['text' => '💪 Тренировки']),
                 Keyboard::button(['text' => '🍎 Питание'])
             ])
             ->row([
                 Keyboard::button(['text' => '⚙️ Аккаунт']) 
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -26,19 +23,17 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                // ---> ДОБАВЛЕНЫ EMOJI <---
                 Keyboard::button(['text' => '➕ Записать тренировку'])
             ])
             ->row([
-                Keyboard::button(['text' => '📈 Посмотреть прогресс']), // Изменил emoji
-                Keyboard::button(['text' => '🤸 Посмотреть технику']) // Или ℹ️
+                Keyboard::button(['text' => '📈 Посмотреть прогресс']), 
+                Keyboard::button(['text' => '🤸 Посмотреть технику']) 
             ])
             ->row([
-                Keyboard::button(['text' => '📊 Отстающие группы']) // Заменил текст и добавил emoji
+                Keyboard::button(['text' => '📊 Отстающие группы']) 
             ])
             ->row([
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -47,15 +42,14 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                // ---> ДОБАВЛЕНЫ EMOJI <---
-                Keyboard::button(['text' => '📖 Дневник']) // Или 🗓️
+
+                Keyboard::button(['text' => '📖 Дневник']) 
             ])
             ->row([
-                Keyboard::button(['text' => '🔍 БЖУ продуктов']) // Или 🍔
+                Keyboard::button(['text' => '🔍 БЖУ продуктов']) 
             ])
             ->row([
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -64,7 +58,6 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                 // ---> ДОБАВЛЕНЫ EMOJI <---
                 Keyboard::button(['text' => 'ℹ️ Имя и почта'])
             ])
             ->row([
@@ -73,7 +66,6 @@ class KeyboardService
             ])
             ->row([
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -82,9 +74,7 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                 // ---> ДОБАВЛЕН EMOJI <---
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -93,15 +83,13 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                // ---> ДОБАВЛЕНЫ EMOJI <---
                 Keyboard::button(['text' => '➕ Добавить упражнение'])
             ])
             ->row([
-                Keyboard::button(['text' => '✅ Завершить запись']) // Изменил текст
+                Keyboard::button(['text' => '✅ Завершить запись'])
             ])
             ->row([
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -110,21 +98,19 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                 // ---> ДОБАВЛЕНЫ EMOJI <---
-                Keyboard::button(['text' => '💾 Сохранить продукт']) // Изменил текст
+                Keyboard::button(['text' => '💾 Сохранить продукт']) 
             ])
             ->row([
-                Keyboard::button(['text' => '🗑️ Удалить продукт']) // Изменил текст
+                Keyboard::button(['text' => '🗑️ Удалить продукт']) 
             ])
             ->row([
-                Keyboard::button(['text' => '📜 Сохранённые']) // Изменил текст
+                Keyboard::button(['text' => '📜 Сохранённые']) 
             ])
             ->row([
-                Keyboard::button(['text' => '🔎 Поиск']) // Изменил текст
+                Keyboard::button(['text' => '🔎 Поиск']) 
             ])
             ->row([
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -133,10 +119,8 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                 // ---> ДОБАВЛЕНЫ EMOJI <---
                 Keyboard::button(['text' => '✅ Да']),
                 Keyboard::button(['text' => '❌ Нет'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(true);
     }
@@ -145,18 +129,16 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                 // ---> ДОБАВЛЕНЫ EMOJI <---
                 Keyboard::button(['text' => '➕ Записать приём пищи'])
             ])
             ->row([
                 Keyboard::button(['text' => '🗑️ Удалить приём пищи'])
             ])
             ->row([
-                Keyboard::button(['text' => '🗓️ Посмотреть рацион']) // Изменил текст
+                Keyboard::button(['text' => '🗓️ Посмотреть рацион'])
             ])
             ->row([
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
@@ -165,20 +147,18 @@ class KeyboardService
     {
         return Keyboard::make()
             ->row([
-                 // ---> ДОБАВЛЕНЫ EMOJI <---
-                Keyboard::button(['text' => '🔍 Поиск в базе']) // Изменил текст
+                Keyboard::button(['text' => '🔍 Поиск в базе']) 
             ])
             ->row([
-                Keyboard::button(['text' => '✍️ Записать БЖУ вручную']) // Изменил текст
+                Keyboard::button(['text' => '✍️ Записать БЖУ вручную'])
             ])
             ->row([
                 Keyboard::button(['text' => '⬅️ Назад'])
-                 // ---> КОНЕЦ ДОБАВЛЕНИЯ <---
             ])
             ->setResizeKeyboard(true)->setOneTimeKeyboard(false);
     }
 
-    public function removeKeyboard(): string // Метод для удаления клавиатуры
+    public function removeKeyboard(): string 
     {
         return Keyboard::remove();
     }

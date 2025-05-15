@@ -1,6 +1,6 @@
 {
     "390311595": {
-        "active_account_email": "qwe@asw.com",
+        "active_account_email": "Dodo@yandex.ru",
         "accounts": {
             "QQ@gmail.com": {
                 "name": "Alexey",
@@ -29,6 +29,20 @@
                 "password": "$2y$10$95MFKbq8LCMTUlsbW33R\/e96vQjIl1Pxb6oONXduXdxk316efXuZy",
                 "nutrition_api_token": "10|rUP7c9tVfunPjbzqKkAnXeXyDtZ7huX87vfJTa0Ab1f4079f",
                 "workout_api_token": "10|RXqOLJyZHGJBryOyYkHDl9MirqRG3FPL5oDXNTVpd0955624"
+            },
+            "wer@wer.com": {
+                "name": "REady",
+                "email": "wer@wer.com",
+                "password": "$2y$10$MN7OcYPEohkxmzR3fgyAK.4YLMOvgu34wBzgenTouTyj3TRoGC0za",
+                "nutrition_api_token": "11|GmnXSVD9w4NhUyN68Up6RCU7p7DC2to2LgsVg2nh52c74656",
+                "workout_api_token": "11|u4qQSGwIZHPcMzr2DK6HAmqDsEpSdfRf2JOg7yDA76df1f24"
+            },
+            "Dodo@yandex.ru": {
+                "name": "Алексей",
+                "email": "Dodo@yandex.ru",
+                "password": "$2y$10$g6vrOTDHYDjIHwryrZINa.dp82S7f26EpEwh9joKCF62ZG4jNihX6",
+                "nutrition_api_token": "12|xrN5pG9Vkc6VZb8nZQ9lBHM4owFAm3MB4H2kEbTa5cd70007",
+                "workout_api_token": "12|sWSD3AlJVd0eSqRDNposLRTBlsgyFqsgPXSb6pdkcbc78fd7"
             }
         }
     },
