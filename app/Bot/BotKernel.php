@@ -1754,19 +1754,13 @@ class BotKernel
 
                         if (!$activeEmail || !$workoutToken) {
                             $this->telegram->sendMessage(['chat_id' => $chatId, 'text' => 'Ошибка: Аккаунт или токен для сервиса тренировок не определен.', 'reply_markup' => $this->keyboardService->makeTrainingMenu()]);
-                            // Сбрасываем состояние и selections, чтобы избежать зависания
                             $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU;
                             unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['training_mode'], $this->userSelections[$chatId]['exercise']);
-                            // break; // Если это внутри switch более высокого уровня, иначе return;
                         } else {
                             try {
                                 $client = new \GuzzleHttp\Client(['timeout' => 10, 'connect_timeout' => 5]);
-                                $encodedExerciseName = rawurlencode($selectedExerciseName); // $selectedExerciseName уже должно быть определено выше
-
-                                // --- ИСПОЛЬЗУЕМ URL ИЗ POSTMAN/ТЕСТА ---
+                                $encodedExerciseName = rawurlencode($selectedExerciseName); 
                                 $serviceUrl = env('WORKOUT_SERVICE_BASE_URI', 'http://localhost:8001') . "/api/v1/exercises/by-name/{$encodedExerciseName}/guide";
-                                //                                                                                    ^^^ (множественное число)
-
                                 Log::info("WORKOUT TECHNIQUE: Запрос гайда", ['url' => $serviceUrl, 'exercise' => $selectedExerciseName, 'email' => $activeEmail]);
                                 $response = $client->get($serviceUrl, [
                                     'headers' => [
@@ -1786,7 +1780,6 @@ class BotKernel
                                         'disable_web_page_preview' => false
                                     ]);
                                 } else {
-                                    // Если API вернул 200, но tutorial пустой или data.tutorial отсутствует
                                     $apiMessage = $this->extractErrorMessage($responseBody, "тренировок (гайд)");
                                     $userMessage = "Гайд для упражнения '{$selectedExerciseName}' не найден на сервере (ответ API не содержит ссылку).";
                                     if(isset($responseBody['message'])) $userMessage = $responseBody['message']; // Если API явно говорит "не найдено"
@@ -1799,17 +1792,14 @@ class BotKernel
                                 } else {
                                     $this->handleGuzzleError($e, $chatId, "тренировок (гайд)");
                                 }
-                            } catch (\Throwable $e) { // Ловим все остальные ошибки, включая ServerException (500)
+                            } catch (\Throwable $e) { 
                                 $this->handleGuzzleError($e, $chatId, "тренировок (гайд)");
                             }
                         }
-                        // После показа техники (или ошибки) возвращаем в меню записи тренировки
-                        // и очищаем selections, чтобы пользователь мог начать новый выбор
                         $this->userStates[$chatId] = States::LOGGING_TRAINING_MENU;
                         $this->telegram->sendMessage([
                             'chat_id' => $chatId,
                             'text' => 'Выберите следующее действие:',
-                            // Убедись, что makeLoggingTrainingMenu существует и возвращает правильную клавиатуру
                             'reply_markup' => $this->keyboardService->makeTrainingMenu()
                         ]);
                         unset($this->userSelections[$chatId]['group'], $this->userSelections[$chatId]['type'], $this->userSelections[$chatId]['training_mode'], $this->userSelections[$chatId]['exercise']);

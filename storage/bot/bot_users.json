@@ -1,20 +1,13 @@
 {
     "390311595": {
-        "active_account_email": "qwe@qwe.com",
+        "active_account_email": "kondratenkoalexey9@gmail.com",
         "accounts": {
-            "Aaaaa@aa.com": {
-                "name": "Миша",
-                "email": "Aaaaa@aa.com",
-                "password": "$2y$10$6cxwKv3Xcw6PENtVAUCs\/OMtpbtlC6EWLcfjd9GFDilcq7bLtwD7.",
-                "nutrition_api_token": "13|qrpvnWBmAF5aib50KpAPgGbF3JnefEi2PgtMVmwJ61338f5d",
-                "workout_api_token": "13|WXVmPH92NPTtFUwVweBEa3I8Hfjf2HJLYOTQndlz86279e83"
-            },
-            "qwe@qwe.com": {
-                "name": "check",
-                "email": "qwe@qwe.com",
-                "password": "$2y$10$2Al\/TYLLK5sQjnQ5nkVVHusqD7hUG77wG7hlqxHSGUi7MI7ThHNKO",
-                "nutrition_api_token": "14|Cq71NxbD7STfFBdKq7KpBPNak2jReqqunDRKpQe044f0bf90",
-                "workout_api_token": "1|T1G958Q5usa8sZJWG8UswAUv2y8qCzUTDpm5vgEDac05fe60"
+            "kondratenkoalexey9@gmail.com": {
+                "name": "Алексей",
+                "email": "kondratenkoalexey9@gmail.com",
+                "password": "$2y$10$iW8FJc9yzizXuby6sqkbSOQkQ17jYpF3fKl1guSRSLaDdFhixPvii",
+                "nutrition_api_token": "15|OXYRxgYEQi8k1XXOUzxloinGItWdurJSUgPDXu4Jab52527e",
+                "workout_api_token": "2|TGHkhJafNaKedZO793gxW797L3hMl74kZ1vZZndsea8c2894"
             }
         }
     }
