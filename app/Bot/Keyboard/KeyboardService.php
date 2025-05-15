@@ -161,5 +161,14 @@ class KeyboardService
     public function removeKeyboard(): string 
     {
         return Keyboard::remove();
+    }    public function makeSingleButtonMenu(string $buttonText): string
+    {
+        return json_encode([
+            'keyboard' => [
+                [Keyboard::button(['text' => $buttonText])]
+            ],
+            'resize_keyboard' => true,
+            'one_time_keyboard' => true 
+        ]);
     }
 }

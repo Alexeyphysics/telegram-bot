@@ -4,6 +4,7 @@ namespace Bot\Constants;
 class States
 {
     public const DEFAULT = 0;
+    public const SHOWING_WELCOME_MESSAGE = -1;
     public const AWAITING_NAME = 1;
     public const AWAITING_EMAIL = 2;
     public const AWAITING_PASSWORD = 3;

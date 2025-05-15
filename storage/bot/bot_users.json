@@ -1,67 +1,13 @@
 {
     "390311595": {
-        "active_account_email": "Dodo@yandex.ru",
+        "active_account_email": "Aaaaa@aa.com",
         "accounts": {
-            "QQ@gmail.com": {
-                "name": "Alexey",
-                "email": "QQ@gmail.com",
-                "password": "$2y$10$bSZxZ7FH2UwDuqC1dtRJV.\/3USXzcpOZGzWDG.4eKDGLZ4aNRu3Ji",
-                "nutrition_api_token": "5|Vk69wwMP1VWDXIBcuauIm7Ch3kOsxVXRY6mbt1cP161e4300",
-                "workout_api_token": "5|vXaOqf7QmZzMvRNRfK5Lb9vIPDwkOrdT1rPz56zf1a1490d8"
-            },
-            "blabla@bla.com": {
-                "name": "Sasha",
-                "email": "blabla@bla.com",
-                "password": "$2y$10$RymSVR1nsv3Caq5iS0.QnOXN.pICUrJbi8.Fe3SREJsY2yDmJ2JBq",
-                "nutrition_api_token": "8|yUXwPEepWW9iv4VEiGpvk5YSFPRJpVCysDsPqdrq5ccd8ad7",
-                "workout_api_token": "8|Y5VftM92v5e0yYg350N3TRAzPecYKP3uis11E19tca2b0a9f"
-            },
-            "qwertt@as.com": {
-                "name": "guy",
-                "email": "qwertt@as.com",
-                "password": "$2y$10$GknqrVm5z.snjS6iZo293e1V9G21dFM5\/pviQY0neH.g8zksRQOAe",
-                "nutrition_api_token": "9|VCCcm0cXMP57CVUzX1FXdUf8SJMQud6pYwL77i1J41ccb841",
-                "workout_api_token": "9|P1bgmDy61fMBI00STnMjxiStwCrvABdMtAbR9RyU5ee083dd"
-            },
-            "qwe@asw.com": {
-                "name": "tyty",
-                "email": "qwe@asw.com",
-                "password": "$2y$10$95MFKbq8LCMTUlsbW33R\/e96vQjIl1Pxb6oONXduXdxk316efXuZy",
-                "nutrition_api_token": "10|rUP7c9tVfunPjbzqKkAnXeXyDtZ7huX87vfJTa0Ab1f4079f",
-                "workout_api_token": "10|RXqOLJyZHGJBryOyYkHDl9MirqRG3FPL5oDXNTVpd0955624"
-            },
-            "wer@wer.com": {
-                "name": "REady",
-                "email": "wer@wer.com",
-                "password": "$2y$10$MN7OcYPEohkxmzR3fgyAK.4YLMOvgu34wBzgenTouTyj3TRoGC0za",
-                "nutrition_api_token": "11|GmnXSVD9w4NhUyN68Up6RCU7p7DC2to2LgsVg2nh52c74656",
-                "workout_api_token": "11|u4qQSGwIZHPcMzr2DK6HAmqDsEpSdfRf2JOg7yDA76df1f24"
-            },
-            "Dodo@yandex.ru": {
-                "name": "Алексей",
-                "email": "Dodo@yandex.ru",
-                "password": "$2y$10$g6vrOTDHYDjIHwryrZINa.dp82S7f26EpEwh9joKCF62ZG4jNihX6",
-                "nutrition_api_token": "12|xrN5pG9Vkc6VZb8nZQ9lBHM4owFAm3MB4H2kEbTa5cd70007",
-                "workout_api_token": "12|sWSD3AlJVd0eSqRDNposLRTBlsgyFqsgPXSb6pdkcbc78fd7"
-            }
-        }
-    },
-    "5255105248": {
-        "active_account_email": "Sasasas@sasasa.com",
-        "accounts": {
-            "Sasasas@sasasa.com": {
-                "name": "Санек",
-                "email": "Sasasas@sasasa.com",
-                "password": "$2y$10$facdme56XAinJJzFenSKRuNkBlaIcpvJHYmGCEPQzU81FmtEZgbDm",
-                "nutrition_api_token": "6|wQPE15DqeKZBUXNfcgwtRV8Rq1ZGiLBxTxLi2sli5cc151aa",
-                "workout_api_token": "6|hxcNc3AvuK6NwvL8xMtX5fjRInhXdHiS9Ihe9Huu00eed116"
-            },
-            "Pedik@pedik.com": {
-                "name": "Pedik",
-                "email": "Pedik@pedik.com",
-                "password": "$2y$10$nTsbTymTqKOdA8k0nzDjs.AO4F5IrSfzJ.FgSQ0D70iPfutkpsaUa",
-                "nutrition_api_token": "7|SiJ8dw8lTR8jXQMVTIVlMR5OhxooSSkJLbsSuhuKd646ae51",
-                "workout_api_token": "7|tK84rF5hlGlrjFfQLg4pc1oilW3YxRKMp721VHXA1e4e1b74"
+            "Aaaaa@aa.com": {
+                "name": "Миша",
+                "email": "Aaaaa@aa.com",
+                "password": "$2y$10$6cxwKv3Xcw6PENtVAUCs\/OMtpbtlC6EWLcfjd9GFDilcq7bLtwD7.",
+                "nutrition_api_token": "13|qrpvnWBmAF5aib50KpAPgGbF3JnefEi2PgtMVmwJ61338f5d",
+                "workout_api_token": "13|WXVmPH92NPTtFUwVweBEa3I8Hfjf2HJLYOTQndlz86279e83"
             }
         }
     }

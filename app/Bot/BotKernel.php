@@ -112,6 +112,23 @@ class BotKernel
         if ($text === '⬅️ Назад' && $this->handleBackDuringInput($chatId, $message, $currentState)) {
             return;
         }
+        if ($currentState === States::SHOWING_WELCOME_MESSAGE) {
+            if ($text === '🚀 Начать!') {
+                $this->userStates[$chatId] = States::AWAITING_NAME; 
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Отлично! Давайте зарегистрируем ваш первый аккаунт. Введите ваше имя:',
+                    'reply_markup' => $this->keyboardService->removeKeyboard() 
+                ]);
+            } else {
+                $this->telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Пожалуйста, нажмите кнопку "🚀 Начать!", чтобы продолжить.',
+                    'reply_markup' => $this->keyboardService->makeSingleButtonMenu('🚀 Начать!')
+                ]);
+            }
+            return;
+        }
         if ($currentState >= States::AWAITING_NAME && $currentState <= States::AWAITING_PASSWORD) {
             $this->handleRegistrationState($chatId, $text, $message, $currentState);
             return; 
@@ -1872,32 +1889,36 @@ class BotKernel
         }
         switch ($text) {
             case '/start':
-                if (isset($this->userData[$chatId])) {
-                    $activeAccountData = $this->getActiveAccountData($chatId);
-                    if ($activeAccountData) {
-                        $name = $activeAccountData['name'] ?? 'пользователь';
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => "С возвращением, {$name}! (Активный аккаунт: {$activeAccountData['email']})",
-                            'reply_markup' => $this->keyboardService->makeMainMenu()
-                        ]);
-                    } else {
-                        $this->telegram->sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => "Ошибка: не удалось определить активный аккаунт. Попробуйте выбрать аккаунт через меню.",
-                            'reply_markup' => $this->keyboardService->makeAccountMenu() 
-                        ]);
-                    }
-                    $this->userStates[$chatId] = States::DEFAULT;
-                } else {
-                    $this->userStates[$chatId] = States::AWAITING_NAME;
+                if (isset($this->userData[$chatId]) && !empty($this->userData[$chatId]['accounts'])) {
+                    $activeEmail = $this->getActiveAccountEmail($chatId);
+                    $activeName = $this->userData[$chatId]['accounts'][$activeEmail]['name'] ?? 'Пользователь';
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
-                        'text' => "Добро пожаловать! Давайте зарегистрируем ваш первый аккаунт.\nВведите ваше имя:",
-                        'reply_markup' => $this->keyboardService->removeKeyboard()
+                        'text' => "С возвращением, {$activeName}! Чем могу помочь?",
+                        'reply_markup' => $this->keyboardService->makeMainMenu()
+                    ]);
+                    $this->userStates[$chatId] = States::DEFAULT;
+                    unset($this->userSelections[$chatId]); 
+                } else {
+                    $this->userStates[$chatId] = States::SHOWING_WELCOME_MESSAGE;
+                    unset($this->userData[$chatId]); 
+                    unset($this->userSelections[$chatId]);
+
+                    $welcomeText = "👋 Добро пожаловать в PIUS Bot!\n\n" .
+                                "Я помогу тебе отслеживать твое питание и тренировки.\n\n" .
+                                "Основные возможности:\n" .
+                                "🍏 Ведение дневника питания (БЖУК)\n" .
+                                "💪 Запись тренировок и отслеживание прогресса\n" .
+                                "📊 Аналитика (в будущем)\n\n" .
+                                "Нажми \"Начать\", чтобы создать свой первый аккаунт и приступить!";
+
+                    $this->telegram->sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => $welcomeText,
+                        'reply_markup' => $this->keyboardService->makeSingleButtonMenu('🚀 Начать!')
                     ]);
                 }
-                break; 
+                break;
             case '⚙️ Аккаунт':
                  if ($currentState === States::DEFAULT) {
                     $this->telegram->sendMessage([
